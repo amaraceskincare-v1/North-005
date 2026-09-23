@@ -1,7 +1,82 @@
 /**
  * APEX OmniERP - Employee Tracking System (ETS) & GIS Map Engine
- * Enhanced with Interactive Precision Pin Recalibration for Davao Del Norte
+ * Enhanced with Interactive Precision Pin Recalibration & Municipality-Based STL BOOTH Pin Colors
  */
+
+// Section 7 & 8: Centralized Municipality -> Color Mapping Configuration
+// Panabo City = GREEN, Sto. Tomas = YELLOW, Carmen = RED, Kapalong = BLUE
+const DEFAULT_MUNICIPALITY_COLORS = {
+  'Panabo City': '#10b981',  // GREEN
+  'Panabo': '#10b981',
+  'Sto. Tomas': '#eab308',   // YELLOW
+  'Santo Tomas': '#eab308',
+  'Carmen': '#ef4444',       // RED
+  'Kapalong': '#3b82f6',     // BLUE
+  'Tagum City': '#8b5cf6',   // PURPLE
+  'Tagum': '#8b5cf6',
+  'Talaingod': '#ec4899',    // PINK
+  'Samal': '#06b6d4',        // CYAN / TEAL
+  'Island Garden City of Samal': '#06b6d4',
+  'Asuncion': '#f97316',     // ORANGE
+  'New Corella': '#14b8a6',  // TEAL
+  'San Isidro': '#6366f1',   // INDIGO
+  'Braulio E. Dujali': '#84cc16' // LIME
+};
+
+const MUNICIPALITY_FALLBACK_PALETTE = [
+  '#10b981', '#eab308', '#ef4444', '#3b82f6', '#8b5cf6', 
+  '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1', '#84cc16', '#d97706', '#059669'
+];
+
+function getStoredMunicipalityColorMap() {
+  try {
+    const raw = localStorage.getItem('NORTH005_MUNI_COLORS');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Could not parse stored muni colors', e);
+  }
+  return { ...DEFAULT_MUNICIPALITY_COLORS };
+}
+
+function saveMunicipalityColorMap(map) {
+  try {
+    localStorage.setItem('NORTH005_MUNI_COLORS', JSON.stringify(map));
+  } catch (e) {
+    console.warn('Could not persist muni colors', e);
+  }
+}
+
+function resolveMunicipalityColor(muni) {
+  if (!muni) return '#3b82f6';
+  const cleanMuni = muni.trim();
+  const map = getStoredMunicipalityColorMap();
+  
+  // Exact or case-insensitive match
+  for (const [key, color] of Object.entries(map)) {
+    if (key.toLowerCase() === cleanMuni.toLowerCase()) {
+      return color;
+    }
+  }
+
+  // Substring match (e.g. "Panabo" in "Panabo City")
+  for (const [key, color] of Object.entries(map)) {
+    if (cleanMuni.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(cleanMuni.toLowerCase())) {
+      map[cleanMuni] = color;
+      saveMunicipalityColorMap(map);
+      return color;
+    }
+  }
+
+  // Dynamic persistent assignment of unused color from palette
+  const usedColors = Object.values(map);
+  const available = MUNICIPALITY_FALLBACK_PALETTE.find(c => !usedColors.includes(c)) || '#64748b';
+  map[cleanMuni] = available;
+  saveMunicipalityColorMap(map);
+  return available;
+}
+
+window.getMunicipalityColor = resolveMunicipalityColor;
+window.getMunicipalityColorMap = getStoredMunicipalityColorMap;
 
 class EtsMapEngine {
   constructor() {
@@ -55,15 +130,16 @@ class EtsMapEngine {
     setTimeout(() => this.map.invalidateSize(), 300);
   }
 
-  createSvgIcon(color, glyphText, isDraggable = false) {
+  // Marker icon representing an STL BOOTH with municipality color
+  createSvgIcon(color, glyphText, isDraggable = false, title = 'STL BOOTH') {
     return L.divIcon({
       className: 'custom-ets-marker',
       html: `
-        <div style="
+        <div title="${title}" style="
           background: ${color};
           color: #ffffff;
-          width: 32px;
-          height: 32px;
+          width: 34px;
+          height: 34px;
           border-radius: 50%;
           display: flex;
           align-items: center;
@@ -80,7 +156,7 @@ class EtsMapEngine {
           <div style="
             position: absolute;
             bottom: -6px;
-            left: 10px;
+            left: 11px;
             width: 0;
             height: 0;
             border-left: 6px solid transparent;
@@ -89,9 +165,9 @@ class EtsMapEngine {
           "></div>
         </div>
       `,
-      iconSize: [32, 38],
-      iconAnchor: [16, 38],
-      popupAnchor: [0, -36]
+      iconSize: [34, 40],
+      iconAnchor: [17, 40],
+      popupAnchor: [0, -38]
     });
   }
 
@@ -109,30 +185,50 @@ class EtsMapEngine {
     const isDraggable = this.calibrationMode;
 
     allStaff.forEach(emp => {
-      let color = '#10b981';
+      // Determine Municipality for pin color coding
+      let muni = emp.municipality || '';
+      if (!muni || muni === '-') {
+        const addr = (emp.address || emp.area || emp.purok || '').toLowerCase();
+        if (addr.includes('panabo')) muni = 'Panabo City';
+        else if (addr.includes('tomas')) muni = 'Sto. Tomas';
+        else if (addr.includes('carmen')) muni = 'Carmen';
+        else if (addr.includes('kapalong')) muni = 'Kapalong';
+        else if (addr.includes('tagum')) muni = 'Tagum City';
+        else if (addr.includes('talaingod')) muni = 'Talaingod';
+        else if (addr.includes('samal')) muni = 'Samal';
+        else muni = 'Sto. Tomas';
+      }
+
+      // Municipality-based STL BOOTH Pin Color
+      const color = resolveMunicipalityColor(muni);
+
       let glyph = '🏪';
       let targetLayer = this.markers.tellers;
 
       const roleUpper = (emp.role || '').toUpperCase();
       if (roleUpper.includes('SUPERVISOR')) {
-        color = '#7c3aed';
         glyph = '⭐';
         targetLayer = this.markers.supervisors;
       } else if (roleUpper.includes('COLLECTOR')) {
-        color = '#f59e0b';
         glyph = '🛵';
         targetLayer = this.markers.collectors;
       } else if (roleUpper.includes('RELIEVER')) {
-        color = '#0284c7';
         glyph = '🔄';
         targetLayer = this.markers.tellers;
+      } else if (roleUpper.includes('TEAM LEADER')) {
+        glyph = '👔';
+        targetLayer = this.markers.supervisors;
       }
 
-      const icon = this.createSvgIcon(color, glyph, isDraggable);
+      const boothDisplay = emp.boothCode || emp.booth || '-';
+      const icon = this.createSvgIcon(color, glyph, isDraggable, `STL BOOTH: ${boothDisplay} (${muni})`);
       const marker = L.marker([emp.lat, emp.lng], { 
         icon,
         draggable: isDraggable
       });
+
+      // Marker Tooltip (STL BOOTH)
+      marker.bindTooltip(`<strong>STL BOOTH</strong>: ${boothDisplay} • ${emp.name} (${muni})`, { direction: 'top' });
 
       // Handle dragend when in calibration mode
       marker.on('dragend', (event) => {
@@ -140,18 +236,32 @@ class EtsMapEngine {
         this.promptSaveCalibration(emp.id, emp.name, newLatLng.lat, newLatLng.lng);
       });
 
+      // Role display normalization
+      let displayRole = emp.role;
+      if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') displayRole = 'Sales Representative';
+      else if (roleUpper === 'RELIVER') displayRole = 'Reliever';
+
       marker.bindPopup(`
-        <div style="font-family: inherit; min-width: 230px;">
-          <div style="font-weight: 700; font-size: 14px; color: #0f172a; margin-bottom: 2px;">
+        <div style="font-family: inherit; min-width: 240px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; background: ${color}; color: #ffffff; padding: 2px 7px; border-radius: 4px; letter-spacing: 0.5px;">
+              STL BOOTH
+            </span>
+            <span style="font-size: 11.5px; font-weight: 700; color: ${color};">
+              ● ${muni}
+            </span>
+          </div>
+          <div style="font-weight: 800; font-size: 15px; color: #0f172a; margin-bottom: 2px;">
             ${emp.name}
           </div>
           <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">
-            ${emp.role} • <code>${emp.id}</code>
+            ${displayRole} • <code>${emp.id}</code>
           </div>
-          <div style="font-size: 12px; margin-bottom: 3px;"><strong>Station / Booth:</strong> <code>${emp.boothCode}</code></div>
-          <div style="font-size: 12px; margin-bottom: 3px;"><strong>Address:</strong> ${emp.address || emp.area}</div>
-          <div style="font-size: 12px; margin-bottom: 3px;"><strong>GPS:</strong> <span style="font-family: monospace; font-weight: 600;">${emp.lat.toFixed(6)}, ${emp.lng.toFixed(6)}</span></div>
-          <div style="font-size: 12px; margin-bottom: 6px;"><strong>Status:</strong> <span style="font-weight: 600; color: #16a34a;">${emp.status}</span></div>
+          <div style="font-size: 12px; margin-bottom: 3px;"><strong>Outlet / Booth Location:</strong> <code>${boothDisplay}</code></div>
+          <div style="font-size: 12px; margin-bottom: 3px;"><strong>Municipality:</strong> <span style="font-weight: 700; color: ${color};">${muni}</span></div>
+          <div style="font-size: 12px; margin-bottom: 3px;"><strong>Address:</strong> ${emp.address || emp.area || '-'}</div>
+          <div style="font-size: 12px; margin-bottom: 3px;"><strong>GPS:</strong> <span style="font-family: monospace; font-weight: 600;">${emp.lat ? emp.lat.toFixed(6) : '-'}, ${emp.lng ? emp.lng.toFixed(6) : '-'}</span></div>
+          <div style="font-size: 12px; margin-bottom: 6px;"><strong>Status:</strong> <span style="font-weight: 600; color: #16a34a;">${emp.status || 'Active'}</span></div>
           <div style="margin-top: 8px; display: flex; gap: 6px;">
             <button onclick="window.openPrecisionCalibrateModal('${emp.id}')" style="flex: 1; padding: 6px 10px; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11.5px; font-weight: 700;">
               ✏️ Edit
@@ -179,7 +289,7 @@ class EtsMapEngine {
     }
 
     if (this.calibrationMode) {
-      alert('🎯 [PIN RECALIBRATION MODE ACTIVATED]\nYou can now:\n1. Drag any employee/booth pin directly on the map to place their exact location.\n2. Or click "Set Exact Coordinates" on any employee in the fleet list to type coordinates.');
+      alert('🎯 [STL BOOTH RECALIBRATION MODE ACTIVATED]\nYou can now:\n1. Drag any STL BOOTH marker directly on the map to place its exact location.\n2. Or click "Edit" on any staff member in the fleet list to type coordinates.');
     }
   }
 
@@ -187,10 +297,10 @@ class EtsMapEngine {
     const formattedLat = parseFloat(lat.toFixed(6));
     const formattedLng = parseFloat(lng.toFixed(6));
 
-    if (confirm(`Save updated GPS Pin Location for:\n${name} (${id})?\n\nNew Coordinates:\nLatitude: ${formattedLat}\nLongitude: ${formattedLng}`)) {
+    if (confirm(`Save updated GPS Location for STL BOOTH:\n${name} (${id})?\n\nNew Coordinates:\nLatitude: ${formattedLat}\nLongitude: ${formattedLng}`)) {
       window.appStore.updateCoordinates(id, formattedLat, formattedLng);
       if (window.sfx) window.sfx.playChime();
-      alert(`✅ GPS Coordinates for ${name} successfully pinned to [${formattedLat}, ${formattedLng}]!`);
+      alert(`✅ GPS Coordinates for STL BOOTH (${name}) successfully saved to [${formattedLat}, ${formattedLng}]!`);
     } else {
       this.renderAllMarkers();
     }

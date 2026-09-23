@@ -301,7 +301,7 @@ function buildDefaultStore() {
       { id: 'dept-exec', name: 'Executive & Operations Directorate', head: 'Mariano V. Duterte Jr.', icon: 'crown' },
       { id: 'dept-sup', name: 'Team Davao Del Norte Supervisors', head: 'SIR JUNDY', icon: 'shield-check' },
       { id: 'dept-col', name: 'Field Collectors Unit', head: 'MARK ANTHONY (MAC2)', icon: 'bike' },
-      { id: 'dept-tel', name: 'Station Tellers & Booth Operations', head: 'Jehramea Marte', icon: 'store' },
+      { id: 'dept-tel', name: 'OUTLET & Booth Operations', head: 'Jehramea Marte', icon: 'store' },
       { id: 'dept-aud', name: 'Internal Audit & Discrepancy Control', head: 'Bernadette L. Santos', icon: 'calculator' },
       { id: 'dept-log', name: 'Logistics & Hardware Maintenance', head: 'Geronimo C. Ramos', icon: 'wrench' }
     ],
@@ -1195,6 +1195,24 @@ class Store {
               if (!e.pos && e.posSerial) e.pos = e.posSerial;
               if (!e.printerName && e.printerSerial) e.printerName = e.printerSerial;
               if (!e.printerSerial && e.printerName) e.printerSerial = e.printerName;
+              
+              // Standardize Portable Printer to 'WITH PORTABLE PRINTER' or 'N/A'
+              const prNorm = (e.printerName || e.printerSerial || '').toUpperCase();
+              if (prNorm.includes('WITH') || prNorm.includes('PRT-') || prNorm.includes('PRINTER') || prNorm.includes('PORTABLE')) {
+                e.printerName = 'WITH PORTABLE PRINTER';
+                e.printerSerial = 'WITH PORTABLE PRINTER';
+              } else {
+                e.printerName = 'N/A';
+                e.printerSerial = 'N/A';
+              }
+
+              // Standardize Role (Teller -> Sales Representative, Reliver -> Reliever)
+              const roleNorm = (e.role || '').toUpperCase();
+              if (roleNorm === 'TELLER' || roleNorm === 'STATION TELLER') {
+                e.role = 'Sales Representative';
+              } else if (roleNorm === 'RELIVER') {
+                e.role = 'Reliever';
+              }
 
               // Phone
               if (!e.phone && e.contact) e.phone = e.contact;
@@ -1687,17 +1705,32 @@ class Store {
         geo = { lat, lng };
       }
 
-      const posVal = (rec.posSerial || rec.pos || `POS-${boothCode}`).trim();
-      const printerVal = (rec.printerName || rec.printerSerial || 'PORTABLE PRINTER NAME').trim();
-      const phoneVal = (rec.phone || rec.contact || '0917-000-0000').trim();
+      const posVal = (rec.posSerial || rec.pos || (boothCode !== '-' ? `POS-${boothCode}` : 'POS-DDN-BUFFER')).trim();
+      
+      // Standardize Portable Printer dropdown values: WITH PORTABLE PRINTER or N/A
+      const rawPr = (rec.printerName || rec.printerSerial || '').toUpperCase().trim();
+      const printerVal = (rawPr.includes('WITH') || rawPr.includes('PRT-') || rawPr.includes('PRINTER') || rawPr.includes('PORTABLE')) ? 'WITH PORTABLE PRINTER' : 'N/A';
+
+      // Distinguish contact phone: if available save number, if missing leave blank / 'N/A' (never invent)
+      const rawPh = (rec.phone || rec.contact || '').trim();
+      const phoneVal = (rawPh && rawPh !== '0917-000-0000' && rawPh !== '-') ? rawPh : 'N/A';
+
       const statusVal = (rec.status || 'Active').trim();
-      const roleVal = (rec.role || 'Station Teller').trim();
+      
+      // Standardize Role: Teller -> Sales Representative, Reliver -> Reliever, Team Leader
+      let roleVal = (rec.role || 'Sales Representative').trim();
+      const roleUpper = roleVal.toUpperCase();
+      if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') roleVal = 'Sales Representative';
+      else if (roleUpper.includes('RELIEVER') || roleUpper.includes('RELIVER')) roleVal = 'Reliever';
+      else if (roleUpper.includes('SUPERVISOR')) roleVal = 'Supervisor';
+      else if (roleUpper.includes('COLLECTOR')) roleVal = 'Collector';
+      else if (roleUpper.includes('TEAM LEADER')) roleVal = 'Team Leader';
 
       const emp = {
         id: newId,
         name: empName,
         role: roleVal,
-        department: rec.department || (roleVal.toLowerCase().includes('collector') ? 'dept-col' : 'dept-tel'),
+        department: rec.department || (roleVal.toLowerCase().includes('collector') ? 'dept-col' : (roleVal.toLowerCase().includes('supervisor') ? 'dept-sup' : 'dept-tel')),
         purok: purokStr,
         municipality: muniStr,
         address: `${purokStr}, ${muniStr}`,
@@ -1771,7 +1804,16 @@ class Store {
         const existing = this.data.employees[idx];
         const updates = {};
         if (rec.name && rec.name.trim()) updates.name = rec.name.trim();
-        if (rec.role) updates.role = rec.role.trim();
+        if (rec.role) {
+          let rVal = rec.role.trim();
+          const rUpper = rVal.toUpperCase();
+          if (rUpper === 'TELLER' || rUpper === 'STATION TELLER') rVal = 'Sales Representative';
+          else if (rUpper.includes('RELIEVER') || rUpper.includes('RELIVER')) rVal = 'Reliever';
+          else if (rUpper.includes('SUPERVISOR')) rVal = 'Supervisor';
+          else if (rUpper.includes('COLLECTOR')) rVal = 'Collector';
+          else if (rUpper.includes('TEAM LEADER')) rVal = 'Team Leader';
+          updates.role = rVal;
+        }
         if (rec.purok) {
           updates.purok = rec.purok.trim();
           updates.address = `${updates.purok}, ${rec.municipality || existing.municipality || 'Sto. Tomas'}`;
@@ -1819,10 +1861,11 @@ class Store {
           updates.lng = Number(rec.coordinates.lng);
           updates.coordinates = { lat: Number(rec.coordinates.lat), lng: Number(rec.coordinates.lng) };
         }
-        if (rec.phone || rec.contact) {
-          const ph = (rec.phone || rec.contact).trim();
-          updates.phone = ph;
-          updates.contact = ph;
+        if (rec.phone !== undefined || rec.contact !== undefined) {
+          const ph = (rec.phone || rec.contact || '').trim();
+          const finalPh = (ph && ph !== '0917-000-0000' && ph !== '-') ? ph : 'N/A';
+          updates.phone = finalPh;
+          updates.contact = finalPh;
         }
         if (rec.status) updates.status = rec.status.trim();
         if (rec.posSerial || rec.pos) {
@@ -1831,12 +1874,23 @@ class Store {
           updates.pos = ps;
         }
         if (rec.printerName || rec.printerSerial) {
-          const pr = (rec.printerName || rec.printerSerial).trim();
-          updates.printerName = pr;
-          updates.printerSerial = pr;
+          const pr = (rec.printerName || rec.printerSerial).trim().toUpperCase();
+          const normPr = (pr.includes('WITH') || pr.includes('PRT-') || pr.includes('PRINTER') || pr.includes('PORTABLE')) ? 'WITH PORTABLE PRINTER' : 'N/A';
+          updates.printerName = normPr;
+          updates.printerSerial = normPr;
         }
 
         this.data.employees[idx] = { ...existing, ...updates };
+        
+        // Also sync to relievers list if this employee is or was a reliever
+        if (this.data.relievers) {
+          const rIdx = this.data.relievers.findIndex(r => r.id === existing.id || r.name.toLowerCase() === existing.name.toLowerCase());
+          if (rIdx !== -1) {
+            this.data.relievers[rIdx] = { ...this.data.relievers[rIdx], ...updates };
+          } else if ((updates.role || existing.role || '').toUpperCase().includes('RELIEVER')) {
+            this.data.relievers.push(this.data.employees[idx]);
+          }
+        }
         updatedCount++;
       }
     });

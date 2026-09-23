@@ -25,7 +25,7 @@
 (function () {
   'use strict';
 
-  // 7 Designated DDN Worksheets & their assigned Municipalities
+  // 7 Designated DDN Worksheets & Relievers Registry
   const TARGET_SHEETS = [
     { sheetName: 'DDN 01 TAGUM', municipality: 'Tagum' },
     { sheetName: 'DDN 02 PANABO', municipality: 'Panabo' },
@@ -33,7 +33,8 @@
     { sheetName: 'DDN 04 STO. TOMAS', municipality: 'Sto. Tomas' },
     { sheetName: 'DDN 05 TALAINGOD', municipality: 'Talaingod' },
     { sheetName: 'DDN 06 KAPALONG', municipality: 'Kapalong' },
-    { sheetName: 'DDN 10 SAMAL', municipality: 'Samal' }
+    { sheetName: 'DDN 10 SAMAL', municipality: 'Samal' },
+    { sheetName: 'RELIEVERS', municipality: 'Davao Sector', isRelieversSheet: true, isOptional: true }
   ];
 
   // Global state for current import session
@@ -78,6 +79,9 @@
   // Helper: Match target sheet name flexibly (ignoring spaces, punctuation, case)
   function findMatchingTarget(sheetName) {
     const norm = cleanStr(sheetName).toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (norm.includes('reliever')) {
+      return { sheetName: 'RELIEVERS', municipality: 'Davao Sector', isRelieversSheet: true, isOptional: true };
+    }
     return TARGET_SHEETS.find(t => {
       const targetNorm = t.sheetName.toLowerCase().replace(/[^a-z0-9]/g, '');
       return norm === targetNorm;
@@ -154,7 +158,7 @@
     const workbook = currentImportData.workbook;
     const availableSheetNames = currentImportData.sheetNames;
 
-    // Scan for each of the 7 designated sheets
+    // Scan for each of the designated sheets
     const sheetsStatus = [];
     let missingCount = 0;
     const sheetsToProcess = [];
@@ -171,30 +175,65 @@
           targetSheet: target.sheetName,
           actualSheet: actualName,
           municipality: target.municipality,
+          isRelieversSheet: !!target.isRelieversSheet,
           found: true,
           recordCount: 0
         });
         sheetsToProcess.push({
           actualSheet: actualName,
           targetSheet: target.sheetName,
-          municipality: target.municipality
+          municipality: target.municipality,
+          isRelieversSheet: !!target.isRelieversSheet
         });
       } else {
-        missingCount++;
+        if (!target.isOptional) {
+          missingCount++;
+        }
         sheetsStatus.push({
           targetSheet: target.sheetName,
           actualSheet: null,
           municipality: target.municipality,
+          isRelieversSheet: !!target.isRelieversSheet,
           found: false,
           recordCount: 0
         });
       }
     });
 
+    // Detect any RELIEVERS sheets with variant names (e.g. "RELIEVER REGISTRY", "RELIEVERS LIST")
+    availableSheetNames.forEach(sheetName => {
+      const norm = sheetName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (norm.includes('reliever')) {
+        const alreadyAdded = sheetsToProcess.some(s => s.actualSheet === sheetName);
+        if (!alreadyAdded) {
+          sheetsToProcess.push({
+            actualSheet: sheetName,
+            targetSheet: 'RELIEVERS',
+            municipality: 'Davao Sector',
+            isRelieversSheet: true
+          });
+          const existingStatus = sheetsStatus.find(s => s.targetSheet === 'RELIEVERS');
+          if (existingStatus) {
+            existingStatus.actualSheet = sheetName;
+            existingStatus.found = true;
+          } else {
+            sheetsStatus.push({
+              targetSheet: 'RELIEVERS',
+              actualSheet: sheetName,
+              municipality: 'Davao Sector',
+              isRelieversSheet: true,
+              found: true,
+              recordCount: 0
+            });
+          }
+        }
+      }
+    });
+
     currentImportData.targetSheetsStatus = sheetsStatus;
     currentImportData.missingSheetsCount = missingCount;
 
-    // Fallback: If NONE of the 7 sheets are found, check if a single master sheet exists
+    // Fallback: If NONE of the sheets are found, check if a single master sheet exists
     if (sheetsToProcess.length === 0) {
       // Check if there is a single sheet (e.g. Master_Registry or Sheet1)
       let fallbackSheet = availableSheetNames[0];
@@ -209,7 +248,8 @@
         sheetsToProcess.push({
           actualSheet: fallbackSheet,
           targetSheet: fallbackSheet,
-          municipality: 'Sto. Tomas'
+          municipality: 'Sto. Tomas',
+          isRelieversSheet: false
         });
       }
     }
@@ -244,32 +284,42 @@
         sheetRecordCount++;
         const record = extractRowData(row, rowIdx + headerAnalysis.headerRowIndex + 2, headerAnalysis, sheetInfo);
 
-        // Validation: Employee Name (Sales Representative) is strictly required
+        // Validation: Employee Name is strictly required
         if (!record.name) {
           record.action = 'ERROR';
-          record.notes = 'Missing Sales Representative name';
+          record.notes = sheetInfo.isRelieversSheet ? 'Missing Reliever name' : 'Missing Sales Representative name';
           allExtractedRecords.push(record);
           return;
         }
 
         // Validation: Sales Representative ID No.
         if (!record.id) {
-          record.action = 'ERROR';
-          record.notes = 'Missing Sales Representative ID No.';
-          allExtractedRecords.push(record);
-          return;
+          if (sheetInfo.isRelieversSheet) {
+            record.id = `DDN005-REL${Math.floor(100 + Math.random() * 900)}`;
+          } else {
+            record.action = 'ERROR';
+            record.notes = 'Missing Sales Representative ID No.';
+            allExtractedRecords.push(record);
+            return;
+          }
         }
 
-        // Validation: Booth Code
-        if (!record.booth || record.booth === '-') {
+        // Validation: Booth Code (Required for regular outlet reps, optional for relievers)
+        if ((!record.booth || record.booth === '-') && !sheetInfo.isRelieversSheet) {
           record.action = 'ERROR';
           record.notes = 'Missing Booth Code';
           allExtractedRecords.push(record);
           return;
         }
+        if (!record.booth) {
+          record.booth = '-';
+          record.boothCode = '-';
+        }
 
         // In-file Duplicate Detection (across entire workbook)
-        const fileKey = `ID:${record.id.toUpperCase()}|NAME:${record.name.toLowerCase()}|BOOTH:${record.booth.toUpperCase()}`;
+        const fileKey = sheetInfo.isRelieversSheet
+          ? `RELIEVER|ID:${record.id.toUpperCase()}|NAME:${record.name.toLowerCase()}`
+          : `ID:${record.id.toUpperCase()}|NAME:${record.name.toLowerCase()}|BOOTH:${record.booth.toUpperCase()}`;
         if (seenInBatch.has(fileKey)) {
           record.action = 'DUPLICATE';
           record.notes = `Duplicate in workbook: identical to ${seenInBatch.get(fileKey)}`;
@@ -278,7 +328,7 @@
         }
         seenInBatch.set(fileKey, `${sheetInfo.targetSheet} (Row ${record.rowNum})`);
 
-        // Check against existing Master Registry (Primary: ID No., Secondary: Full Name + Booth Code)
+        // Check against existing Master Registry (Primary: ID No., Secondary: Full Name)
         const normId = record.id.toLowerCase().trim();
         const normName = record.name.toLowerCase().trim();
         const normBooth = record.booth.toUpperCase().trim();
@@ -286,8 +336,11 @@
         const existingMatch = allExisting.find(e => {
           if (e.id && e.id.toLowerCase().trim() === normId) return true;
           if (e.name && e.name.toLowerCase().trim() === normName) {
+            if (sheetInfo.isRelieversSheet || (e.role && e.role.toLowerCase().includes('reliever'))) {
+              return true;
+            }
             const eb = normalizeBoothCode(e.boothCode || e.booth);
-            if (eb === normBooth) return true;
+            if (eb === normBooth || normBooth === '-') return true;
           }
           return false;
         });
@@ -300,6 +353,9 @@
           const changes = [];
           if (record.name && existingMatch.name && record.name.toLowerCase() !== existingMatch.name.toLowerCase()) {
             changes.push(`Name: ${existingMatch.name} → ${record.name}`);
+          }
+          if (record.role && existingMatch.role && record.role.toLowerCase() !== existingMatch.role.toLowerCase()) {
+            changes.push(`Role: ${existingMatch.role} → ${record.role}`);
           }
           if (record.purok && existingMatch.purok && record.purok.toLowerCase() !== existingMatch.purok.toLowerCase()) {
             changes.push(`Address: ${existingMatch.purok} → ${record.purok}`);
@@ -319,7 +375,7 @@
             }
           }
           const exPhone = existingMatch.phone || existingMatch.contact || '';
-          if (record.phone && exPhone && record.phone !== exPhone && record.phone !== '0917-000-0000') {
+          if (record.phone && exPhone && record.phone !== exPhone && record.phone !== 'N/A' && record.phone !== '0917-000-0000') {
             changes.push(`Phone: ${exPhone} → ${record.phone}`);
           }
           if (record.status && existingMatch.status && record.status.toLowerCase() !== existingMatch.status.toLowerCase()) {
@@ -328,6 +384,10 @@
           const exPos = existingMatch.posSerial || existingMatch.pos || '';
           if (record.posSerial && exPos && record.posSerial !== exPos) {
             changes.push(`POS: ${exPos} → ${record.posSerial}`);
+          }
+          const exPr = existingMatch.printerName || existingMatch.printerSerial || '';
+          if (record.printerName && exPr && record.printerName !== exPr) {
+            changes.push(`Printer: ${exPr} → ${record.printerName}`);
           }
 
           if (changes.length === 0) {
@@ -340,9 +400,10 @@
           }
         } else {
           // DOES NOT EXIST IN SYSTEM -> CREATE NEW MASTER REGISTRY RECORD!
-          // (Applies to all worksheets, especially newly expanding areas like DDN 10 SAMAL)
           record.action = 'NEW';
-          record.notes = `New Sales Representative to be added to Master Registry (${record.municipality})`;
+          record.notes = sheetInfo.isRelieversSheet
+            ? `New Reliever to be added to Reliever Registry (${record.municipality || 'Davao Sector'})`
+            : `New Sales Representative to be added to Master Registry (${record.municipality})`;
         }
 
         allExtractedRecords.push(record);
@@ -470,13 +531,40 @@
       if (txt.includes('coord') || txt.includes('gps')) {
         coordsCol = idx;
       }
+
+      // Municipality / City
+      if (txt.includes('municipality') || txt.includes('city') || txt.includes('town')) {
+        muniCol = idx;
+      }
+
+      // Portable Printer
+      if (txt.includes('printer')) {
+        printerCol = idx;
+      }
+
+      // Role
+      if (txt === 'role' || txt.includes('designation') || txt.includes('position')) {
+        roleCol = idx;
+      }
     });
 
-    // Fallback: If srCol not found, look for "Full Name" or "Employee Name"
+    let muniCol = -1;
+    let printerCol = -1;
+    let roleCol = -1;
+
+    headerRow.forEach((cell, idx) => {
+      const txt = cleanStr(cell).toLowerCase();
+      if (!txt) return;
+      if (txt.includes('municipality') || txt.includes('city') || txt.includes('town')) muniCol = idx;
+      if (txt.includes('printer')) printerCol = idx;
+      if (txt === 'role' || txt.includes('designation') || txt.includes('position')) roleCol = idx;
+    });
+
+    // Fallback: If srCol not found, look for "Full Name", "Employee Name", "Reliever", "Staff", "Personnel"
     if (srCol === -1) {
       headerRow.forEach((cell, idx) => {
         const txt = cleanStr(cell).toLowerCase();
-        if (txt.includes('name') && !txt.includes('coordinator') && !txt.includes('printer')) {
+        if ((txt.includes('name') || txt.includes('reliever') || txt.includes('personnel') || txt.includes('employee') || txt.includes('staff')) && !txt.includes('coordinator') && !txt.includes('printer')) {
           srCol = idx;
         }
       });
@@ -524,7 +612,10 @@
       phoneCol,
       boothCol,
       posCol,
-      coordsCol
+      coordsCol,
+      muniCol,
+      printerCol,
+      roleCol
     };
   }
 
@@ -537,14 +628,26 @@
       return '';
     };
 
-    // 1. Full Name (SALES REPRESENTATIVE)
+    // 1. Full Name (SALES REPRESENTATIVE or RELIEVER)
     const rawName = getCell(headerAnalysis.srCol);
 
-    // 2. ID No. (Sales Representative ID NO. - NOT Coordinator ID)
+    // 2. ID No. (Sales Representative / Reliever ID NO. - NOT Coordinator ID)
     const rawId = getCell(headerAnalysis.srIdCol);
 
-    // 3. Role (Set automatically to appropriate default: 'Sales Representative')
-    const roleVal = 'Sales Representative';
+    // 3. Role (Relievers sheet automatically receives 'Reliever', others receive 'Sales Representative')
+    let roleVal = sheetInfo.isRelieversSheet ? 'Reliever' : 'Sales Representative';
+    if (headerAnalysis.roleCol !== -1) {
+      const explicitRole = getCell(headerAnalysis.roleCol);
+      if (explicitRole) {
+        const erUpper = explicitRole.toUpperCase();
+        if (erUpper.includes('RELIEVER') || erUpper.includes('RELIVER')) roleVal = 'Reliever';
+        else if (erUpper.includes('SUPERVISOR')) roleVal = 'Supervisor';
+        else if (erUpper.includes('COLLECTOR')) roleVal = 'Collector';
+        else if (erUpper.includes('TEAM LEADER')) roleVal = 'Team Leader';
+        else if (erUpper.includes('TELLER') || erUpper.includes('REP')) roleVal = 'Sales Representative';
+        else roleVal = explicitRole;
+      }
+    }
 
     // 4. Purok / Street / Barangay (Combine PUROK + BARANGAY)
     const rawPurok = getCell(headerAnalysis.purokCol);
@@ -558,8 +661,12 @@
       combinedAddress = rawBarangay;
     }
 
-    // 5. Municipality (Determined strictly from worksheet tab name)
-    const muniVal = sheetInfo.municipality;
+    // 5. Municipality (Determined strictly from worksheet tab name or column)
+    let muniVal = sheetInfo.municipality || 'Sto. Tomas';
+    if (headerAnalysis.muniCol !== -1) {
+      const rawMuni = getCell(headerAnalysis.muniCol);
+      if (rawMuni) muniVal = rawMuni;
+    }
 
     // 6. Booth Code (Normalized format: DDN 352 -> DDN-352)
     const rawBooth = normalizeBoothCode(getCell(headerAnalysis.boothCol));
@@ -580,8 +687,9 @@
       }
     }
 
-    // 8. Contact Phone (SR CONTACT #)
-    const rawPhone = getCell(headerAnalysis.phoneCol) || '0917-000-0000';
+    // 8. Contact Phone (Distinguish available phone vs missing; never invent 0917-000-0000)
+    const rawPhone = getCell(headerAnalysis.phoneCol);
+    const cleanPhone = (rawPhone && rawPhone !== '0917-000-0000' && rawPhone !== '-') ? rawPhone : 'N/A';
 
     // 9. Status (STATUS)
     let rawStatus = getCell(headerAnalysis.statusCol) || 'Active';
@@ -591,8 +699,12 @@
     // 10. POS Serial No. (POS NO.)
     const rawPos = getCell(headerAnalysis.posCol) || (rawBooth !== '-' ? `POS-${rawBooth}` : 'POS-DDN-BUFFER');
 
-    // 11. PORTABLE PRINTER NAME (Default / Placeholder)
-    const printerVal = 'PORTABLE PRINTER NAME';
+    // 11. PORTABLE PRINTER NAME (Dropdown: WITH PORTABLE PRINTER or N/A)
+    let rawPrinter = '';
+    if (headerAnalysis.printerCol !== -1) {
+      rawPrinter = getCell(headerAnalysis.printerCol).toUpperCase();
+    }
+    const printerVal = (rawPrinter.includes('WITH') || rawPrinter.includes('PRT-') || rawPrinter.includes('YES') || rawPrinter.includes('TRUE')) ? 'WITH PORTABLE PRINTER' : 'N/A';
 
     return {
       rowNum: rowNum,
@@ -609,8 +721,8 @@
       lat: parsedLat,
       lng: parsedLng,
       rawCoordinates: rawCoords,
-      phone: rawPhone,
-      contact: rawPhone,
+      phone: cleanPhone,
+      contact: cleanPhone,
       status: rawStatus,
       posSerial: rawPos,
       pos: rawPos,

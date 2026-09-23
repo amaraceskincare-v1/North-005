@@ -743,12 +743,12 @@ function renderEmployeesTable(customList = null) {
   const allStaff = rawEmployees.filter(e => !e.name || !e.name.includes('Buffer Reliever'));
 
   // Strictly categorize by role:
-  const supervisors = allStaff.filter(e => (e.role || '').toUpperCase().includes('SUPERVISOR'));
+  const supervisors = allStaff.filter(e => (e.role || '').toUpperCase().includes('SUPERVISOR') || (e.role || '').toUpperCase().includes('TEAM LEADER'));
   const collectors = allStaff.filter(e => (e.role || '').toUpperCase().includes('COLLECTOR'));
-  const relieversList = allStaff.filter(e => (e.role || '').toUpperCase().includes('RELIEVER'));
+  const relieversList = allStaff.filter(e => (e.role || '').toUpperCase().includes('RELIEVER') || (e.role || '').toUpperCase().includes('RELIVER'));
   const tellers = allStaff.filter(e => {
     const r = (e.role || '').toUpperCase();
-    return !r.includes('RELIEVER') && !r.includes('SUPERVISOR') && !r.includes('COLLECTOR');
+    return !r.includes('RELIEVER') && !r.includes('RELIVER') && !r.includes('SUPERVISOR') && !r.includes('COLLECTOR') && !r.includes('TEAM LEADER');
   });
 
   // Update counter badges
@@ -785,9 +785,13 @@ function renderEmployeesTable(customList = null) {
   // Render Table Body for All 11 Exact Columns:
   // | ID No. | Full Name | Role | Purok / Street / Barangay | Municipality | Booth Code | GPS Coordinates | Contact Phone | Status | POS Serial No. | PORTABLE PRINTER NAME | Actions |
   tbody.innerHTML = pageItems.map(emp => {
-    const roleUpper = (emp.role || 'TELLER').toUpperCase();
+    let roleUpper = (emp.role || 'SALES REPRESENTATIVE').toUpperCase();
+    if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') roleUpper = 'SALES REPRESENTATIVE';
+    else if (roleUpper === 'RELIVER') roleUpper = 'RELIEVER';
+
     let roleBadge = 'badge-info';
     if (roleUpper.includes('SUPERVISOR')) roleBadge = 'badge-purple';
+    else if (roleUpper.includes('TEAM LEADER')) roleBadge = 'badge-teal';
     else if (roleUpper.includes('COLLECTOR')) roleBadge = 'badge-warning';
     else if (roleUpper.includes('RELIEVER')) roleBadge = 'badge-neutral';
 
@@ -814,8 +818,10 @@ function renderEmployeesTable(customList = null) {
     // 6. POS Serial No.
     const posDisplay = emp.posSerial || emp.pos || (displayBooth !== '-' ? `POS-${displayBooth}` : '-');
 
-    // 7. PORTABLE PRINTER NAME
-    const printerDisplay = emp.printerName || emp.printerSerial || 'PORTABLE PRINTER NAME';
+    // 7. PORTABLE PRINTER NAME (Dropdown: WITH PORTABLE PRINTER or N/A)
+    const rawPr = (emp.printerName || emp.printerSerial || '').toUpperCase().trim();
+    const isWithPrinter = rawPr.includes('WITH') || rawPr.includes('PRT-') || rawPr.includes('PRINTER') || rawPr.includes('PORTABLE');
+    const printerVal = isWithPrinter ? 'WITH PORTABLE PRINTER' : 'N/A';
 
     // 8. Status styling
     const statusUpper = (emp.status || 'ACTIVE').toUpperCase();
@@ -855,7 +861,10 @@ function renderEmployeesTable(customList = null) {
           <code style="font-weight: 700; font-size: 11.5px; color: var(--text-main);">${posDisplay}</code>
         </td>
         <td style="text-align: center;">
-          <code style="font-weight: 700; font-size: 11.5px; color: var(--text-main); display: inline-block; text-align: center;">${printerDisplay}</code>
+          <select class="form-select" style="padding: 3px 8px; font-size: 11px; font-weight: 700; width: auto; border-radius: 4px; display: inline-block; margin: 0 auto; ${isWithPrinter ? 'border-color: rgba(16, 185, 129, 0.4); color: #10b981; background: rgba(16, 185, 129, 0.1);' : 'color: var(--text-muted);'}" onchange="window.updateEmployeePrinter('${emp.id}', this.value)">
+            <option value="WITH PORTABLE PRINTER" ${isWithPrinter ? 'selected' : ''}>WITH PORTABLE PRINTER</option>
+            <option value="N/A" ${!isWithPrinter ? 'selected' : ''}>N/A</option>
+          </select>
         </td>
         <td style="text-align: center;">
           <div style="display: flex; gap: 4px; align-items: center; justify-content: center;">
@@ -958,8 +967,8 @@ window.showQrPass = function(id) {
         <div><strong>Municipality:</strong> ${muniDisplay}</div>
         <div><strong>Contact Phone:</strong> ${emp.phone || '-'}</div>
         <div><strong>POS Serial No.:</strong> ${emp.posSerial || '-'}</div>
-        <div><strong>PORTABLE PRINTER:</strong> ${emp.printerSerial || '-'}</div>
-        <div><strong>GPS Location:</strong> ${emp.lat ? `${emp.lat.toFixed(4)}, ${emp.lng.toFixed(4)}` : 'Station Anchored'}</div>
+        <div><strong>PORTABLE PRINTER NAME:</strong> ${emp.printerSerial || emp.printerName || 'N/A'}</div>
+        <div><strong>GPS Location:</strong> ${emp.lat ? `${emp.lat.toFixed(4)}, ${emp.lng.toFixed(4)}` : 'Outlet Anchored'}</div>
       </div>
     </div>
     <div style="display: inline-block; padding: 12px; background: #ffffff; border: 2px solid var(--border-color); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
@@ -972,6 +981,29 @@ window.showQrPass = function(id) {
   document.getElementById('modal-qr').classList.add('active');
 };
 
+window.updateEmployeePrinter = function(empId, printerStatus) {
+  const store = window.appStore;
+  const emp = store.data.employees.find(e => e.id === empId) ||
+              (store.data.relievers && store.data.relievers.find(r => r.id === empId));
+  if (!emp) return;
+
+  const finalVal = printerStatus === 'WITH PORTABLE PRINTER' ? 'WITH PORTABLE PRINTER' : 'N/A';
+  emp.printerName = finalVal;
+  emp.printerSerial = finalVal;
+
+  if (store.data.relievers) {
+    const rel = store.data.relievers.find(r => r.id === empId);
+    if (rel) {
+      rel.printerName = finalVal;
+      rel.printerSerial = finalVal;
+    }
+  }
+
+  store.save();
+  if (window.sfx) window.sfx.playChime();
+  renderEmployeesTable();
+};
+
 window.openAddEmployeeModal = function() {
   sfx.playClick();
   document.getElementById('modal-employee-title').textContent = 'Register New Staff Member';
@@ -979,14 +1011,14 @@ window.openAddEmployeeModal = function() {
   const idDisplay = document.getElementById('emp-form-id-display');
   if (idDisplay) idDisplay.value = '';
   document.getElementById('emp-form-name').value = '';
-  document.getElementById('emp-form-role').value = 'TELLER';
+  document.getElementById('emp-form-role').value = 'SALES REPRESENTATIVE';
   document.getElementById('emp-form-dept').value = 'dept-tel';
   document.getElementById('emp-form-purok').value = '';
   document.getElementById('emp-form-muni').value = 'Sto. Tomas';
   document.getElementById('emp-form-booth').value = '';
   document.getElementById('emp-form-phone').value = '';
   document.getElementById('emp-form-pos').value = '';
-  document.getElementById('emp-form-printer').value = '';
+  document.getElementById('emp-form-printer').value = 'WITH PORTABLE PRINTER';
   document.getElementById('emp-form-lat').value = '7.5303';
   document.getElementById('emp-form-lng').value = '125.6264';
   document.getElementById('modal-employee').classList.add('active');
@@ -1006,14 +1038,29 @@ window.editEmployee = function(id) {
   const idDisplay = document.getElementById('emp-form-id-display');
   if (idDisplay) idDisplay.value = emp.id;
   document.getElementById('emp-form-name').value = emp.name;
-  document.getElementById('emp-form-role').value = (emp.role || 'TELLER').toUpperCase();
+  
+  // Standardize Role dropdown selection
+  const rUpper = (emp.role || 'SALES REPRESENTATIVE').toUpperCase();
+  let normalizedRole = 'SALES REPRESENTATIVE';
+  if (rUpper.includes('SUPERVISOR')) normalizedRole = 'SUPERVISOR';
+  else if (rUpper.includes('COLLECTOR')) normalizedRole = 'COLLECTOR';
+  else if (rUpper.includes('RELIEVER') || rUpper.includes('RELIVER')) normalizedRole = 'RELIEVER';
+  else if (rUpper.includes('TEAM LEADER')) normalizedRole = 'TEAM LEADER';
+  else normalizedRole = 'SALES REPRESENTATIVE';
+  document.getElementById('emp-form-role').value = normalizedRole;
+
   document.getElementById('emp-form-dept').value = emp.department || 'dept-tel';
   document.getElementById('emp-form-purok').value = emp.purok && emp.purok !== '-' ? emp.purok : parsed.purok;
   document.getElementById('emp-form-muni').value = emp.municipality && emp.municipality !== '-' ? emp.municipality : parsed.municipality;
   document.getElementById('emp-form-booth').value = emp.boothCode && emp.boothCode !== '-' ? emp.boothCode : '';
-  document.getElementById('emp-form-phone').value = emp.phone && emp.phone !== '-' ? emp.phone : '';
+  document.getElementById('emp-form-phone').value = (emp.phone && emp.phone !== '0917-000-0000' && emp.phone !== '-' && emp.phone !== 'N/A') ? emp.phone : '';
   document.getElementById('emp-form-pos').value = emp.posSerial || '';
-  document.getElementById('emp-form-printer').value = emp.printerSerial || '';
+  
+  // Standardize Portable Printer dropdown selection
+  const rawPr = (emp.printerName || emp.printerSerial || '').toUpperCase().trim();
+  const isWithPr = rawPr.includes('WITH') || rawPr.includes('PRT-') || rawPr.includes('PRINTER') || rawPr.includes('PORTABLE');
+  document.getElementById('emp-form-printer').value = isWithPr ? 'WITH PORTABLE PRINTER' : 'N/A';
+
   document.getElementById('emp-form-lat').value = emp.lat || 7.5303;
   document.getElementById('emp-form-lng').value = emp.lng || 125.6264;
   document.getElementById('modal-employee').classList.add('active');
@@ -1036,7 +1083,13 @@ window.saveEmployeeForm = function() {
   const muni = document.getElementById('emp-form-muni').value.trim() || '-';
   const fullAddress = purok !== '-' ? `${purok}, ${muni}` : muni;
   const boothCode = document.getElementById('emp-form-booth').value.trim() || '-';
-  const phone = document.getElementById('emp-form-phone').value.trim() || '-';
+  
+  // Contact phone: preserve number if provided, otherwise N/A (never invent)
+  const rawPhone = document.getElementById('emp-form-phone').value.trim();
+  const phone = (rawPhone && rawPhone !== '0917-000-0000' && rawPhone !== '-') ? rawPhone : 'N/A';
+
+  // Standardized Portable Printer
+  const printerVal = document.getElementById('emp-form-printer').value === 'WITH PORTABLE PRINTER' ? 'WITH PORTABLE PRINTER' : 'N/A';
 
   // Get existing status if editing, or default to 'ACTIVE'
   let status = 'ACTIVE';
@@ -1059,9 +1112,11 @@ window.saveEmployeeForm = function() {
     municipality: muni,
     boothCode: boothCode,
     phone: phone,
+    contact: phone,
     status: status,
     posSerial: document.getElementById('emp-form-pos').value || (boothCode !== '-' ? `POS-${boothCode}` : 'POS-N9-GEN'),
-    printerSerial: document.getElementById('emp-form-printer').value || (boothCode !== '-' ? `PRT-${boothCode}` : 'PRT-58-GEN'),
+    printerName: printerVal,
+    printerSerial: printerVal,
     lat: parseFloat(document.getElementById('emp-form-lat').value) || 7.5303,
     lng: parseFloat(document.getElementById('emp-form-lng').value) || 125.6264,
     etsStatus: 'Active'
@@ -1079,9 +1134,8 @@ window.saveEmployeeForm = function() {
   sfx.playChime();
   window.closeModals();
   renderEmployeesTable();
-  if (window.etsMap && window.etsMap.renderAllMarkers) {
-    window.etsMap.renderAllMarkers();
-  }
+  if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
+  if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
 };
 
 // =========================================================================
@@ -1154,21 +1208,26 @@ function renderFleetTrackingList() {
     const roleUpper = (emp.role || '').toUpperCase();
     if (roleUpper.includes('COLLECTOR')) statusBg = '#fef3c7; color: #b45309;';
     else if (roleUpper.includes('SUPERVISOR')) statusBg = '#f3e8ff; color: #7e22ce;';
-    else if (roleUpper.includes('RELIEVER')) statusBg = '#e2e8f0; color: #334155;';
+    else if (roleUpper.includes('TEAM LEADER')) statusBg = '#ccfbf1; color: #0f766e;';
+    else if (roleUpper.includes('RELIEVER') || roleUpper.includes('RELIVER')) statusBg = '#e2e8f0; color: #334155;';
 
     const latVal = emp.lat || 7.5303;
     const lngVal = emp.lng || 125.6264;
     const latStr = latVal.toFixed(6);
     const lngStr = lngVal.toFixed(6);
 
+    let displayRole = emp.role;
+    if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') displayRole = 'Sales Representative';
+    else if (roleUpper === 'RELIVER') displayRole = 'Reliever';
+
     return `
       <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-surface); border: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s;" onclick="window.focusEmployeeCoords(${latVal}, ${lngVal}, '${emp.id}')">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">${emp.name}</div>
-          <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: ${statusBg}">${emp.role}</span>
+          <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: ${statusBg}">${displayRole}</span>
         </div>
         <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-          Station: <code>${emp.boothCode || '-'}</code> • ${emp.municipality || emp.address || emp.area || '-'}
+          Outlet: <code>${emp.boothCode || '-'}</code> • ${emp.municipality || emp.address || emp.area || '-'}
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
           <span style="font-size: 10.5px; font-family: monospace; color: var(--text-dim); font-weight: 600;">${latStr}, ${lngStr}</span>
@@ -1192,11 +1251,17 @@ window.openPrecisionCalibrateModal = function(preselectedId = null) {
   const relievers = store.data.relievers || [];
   const allStaff = [...employees, ...relievers.filter(r => !employees.some(e => e.id === r.id))];
 
-  select.innerHTML = allStaff.map(e => `
-    <option value="${e.id}" ${e.id === preselectedId ? 'selected' : ''}>
-      ${e.role}: ${e.name} (${e.id}) - Station: ${e.boothCode || '-'}
-    </option>
-  `).join('');
+  select.innerHTML = allStaff.map(e => {
+    let rName = e.role;
+    const rU = (e.role || '').toUpperCase();
+    if (rU === 'TELLER' || rU === 'STATION TELLER') rName = 'Sales Representative';
+    else if (rU === 'RELIVER') rName = 'Reliever';
+    return `
+      <option value="${e.id}" ${e.id === preselectedId ? 'selected' : ''}>
+        ${rName}: ${e.name} (${e.id}) - Outlet: ${e.boothCode || '-'}
+      </option>
+    `;
+  }).join('');
 
   if (preselectedId) {
     select.value = preselectedId;
@@ -1216,7 +1281,7 @@ window.onCalibTargetSelected = function() {
   document.getElementById('calib-input-lat').value = emp.lat ? emp.lat.toFixed(6) : '7.530300';
   document.getElementById('calib-input-lng').value = emp.lng ? emp.lng.toFixed(6) : '125.626400';
   document.getElementById('calib-address-preview').innerHTML = `
-    <strong>Registered Address:</strong> ${emp.address || emp.area || '-'} | <strong>Assigned Booth:</strong> <code>${emp.boothCode || '-'}</code>
+    <strong>Registered Address:</strong> ${emp.address || emp.area || '-'} | <strong>Outlet / Booth Location:</strong> <code>${emp.boothCode || '-'}</code>
   `;
 };
 
