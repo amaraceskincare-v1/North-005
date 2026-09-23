@@ -102,19 +102,20 @@ function formatPHPShort(num) {
 
 // Initialization on DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
+  // 1. Initialize Universal Router FIRST so the target module is activated immediately
+  initRouter();
+
+  // 2. Initialize Core Shell Components
   initLiveClock();
   initTheme();
   initNavigation();
   initModals();
   initOcrStudio();
   
-  // Render initial views
+  // 3. Populate module data
   renderAll();
 
-  // Initialize Universal Router and activate current route from URL
-  initRouter();
-
-  // Subscribe to store updates
+  // 4. Subscribe to store updates
   window.appStore.subscribe(() => {
     renderAll();
   });
@@ -264,9 +265,13 @@ function initRouter() {
     }
   });
 
-  // Resolve and activate initial route from current URL
-  const initialView = resolveCurrentRoute();
+  // Resolve and activate initial route from current URL or pre-activated view
+  const initialView = window.__INITIAL_ROUTE_VIEW__ || resolveCurrentRoute();
   window.switchView(initialView, false);
+
+  // Clean up early route style now that class="active" is applied to initialView
+  const earlyStyle = document.getElementById('early-route-style');
+  if (earlyStyle) earlyStyle.remove();
 
   const initialPath = VIEW_TO_ROUTE[initialView] || '/dashboard';
   if (window.location.protocol.startsWith('http') && window.location.pathname !== initialPath) {
@@ -308,10 +313,13 @@ window.switchView = function(viewId, updateHistory = true) {
 
   // View specific handlers
   if (viewId === 'view-tracking') {
-    setTimeout(() => {
+    if (window.etsMap) {
       window.etsMap.init('ets-map-container');
       renderFleetTrackingList();
       if (window.etsMap.renderAllMarkers) window.etsMap.renderAllMarkers();
+    }
+    setTimeout(() => {
+      if (window.etsMap && window.etsMap.map) window.etsMap.map.invalidateSize();
     }, 100);
   } else if (viewId === 'view-dashboard') {
     setTimeout(() => {

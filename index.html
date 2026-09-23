@@ -22,6 +22,67 @@
   <!-- Core Design System CSS -->
   <link rel="stylesheet" href="css/styles.css">
 
+  <!-- Early Route Pre-Activation (Eliminates Dashboard Flash on Reload) -->
+  <script>
+    (function () {
+      const ROUTE_MAP = {
+        '/dashboard': 'view-dashboard',
+        '/': 'view-dashboard',
+        '/master-registry': 'view-employees',
+        '/employees': 'view-employees',
+        '/live-tracking': 'view-tracking',
+        '/tracking': 'view-tracking',
+        '/ets': 'view-tracking',
+        '/sales-collection': 'view-pipelines',
+        '/pipelines': 'view-pipelines',
+        '/expenses': 'view-finance',
+        '/purchasing': 'view-finance',
+        '/finance': 'view-finance',
+        '/inventory': 'view-inventory',
+        '/reports': 'view-reports',
+        '/eod-reports': 'view-reports',
+        '/rest-days': 'view-restdays',
+        '/organization': 'view-organization',
+        '/teams': 'view-organization',
+        '/ocr': 'view-ocr'
+      };
+
+      let path = window.location.pathname.replace(/\/$/, '') || '/';
+      if (window.location.hash) {
+        const hashClean = window.location.hash.replace(/^#\/?/, '/');
+        if (ROUTE_MAP[hashClean]) path = hashClean;
+      }
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('route') && ROUTE_MAP[params.get('route')]) {
+        path = params.get('route');
+      }
+
+      let targetView = ROUTE_MAP[path];
+      if (!targetView && (path === '/' || path === '')) {
+        try {
+          const stored = localStorage.getItem('NORTH005_CURRENT_ROUTE');
+          if (stored && ROUTE_MAP[stored]) targetView = ROUTE_MAP[stored];
+        } catch (e) {}
+      }
+      if (!targetView) targetView = 'view-dashboard';
+
+      window.__INITIAL_ROUTE_VIEW__ = targetView;
+
+      // Injects early CSS rule before DOM parsing begins so ONLY the target view is rendered from frame 0
+      const style = document.createElement('style');
+      style.id = 'early-route-style';
+      style.textContent = `
+        #${targetView} { display: block !important; }
+        .sidebar-nav .nav-item[data-view="${targetView}"] {
+          background: rgba(255, 255, 255, 0.08) !important;
+          color: var(--accent-gold) !important;
+          border-left: 3px solid var(--accent-gold) !important;
+        }
+      `;
+      document.head.appendChild(style);
+    })();
+  </script>
+
   <!-- Core Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -51,7 +112,7 @@
 
       <nav class="sidebar-nav">
         <div class="nav-section-title">Core Operations</div>
-        <div class="nav-item active" data-view="view-dashboard">
+        <div class="nav-item" data-view="view-dashboard">
           <span class="icon">📊</span>
           <span>Dashboard</span>
         </div>
@@ -164,7 +225,7 @@
         <!-- ===================================================================
              VIEW 1: EXECUTIVE DASHBOARD
              =================================================================== -->
-        <section id="view-dashboard" class="view-panel active">
+        <section id="view-dashboard" class="view-panel">
           <div class="view-header">
             <div class="view-title-group">
               <h2>Operations Control Center & Executive Dashboard</h2>
