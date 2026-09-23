@@ -1765,26 +1765,20 @@ class Store {
     // 1. Process New Records (ADD)
     newRecords.forEach(rec => {
       const empName = (rec.name || '').trim();
-      if (!empName) return;
+      const finalName = (empName && empName !== 'N/A') ? empName : 'N/A';
 
-      const newId = (rec.id && rec.id.trim()) ? rec.id.trim() : `DDN005-SR${Math.floor(1000 + Math.random() * 9000)}`;
-      const purokStr = (rec.purok || rec.address || '-').trim();
-      const muniStr = (rec.municipality || 'Sto. Tomas').trim();
-      const boothCode = (rec.booth || rec.boothCode || 'DDN-352').trim().toUpperCase();
+      const newId = (rec.id && rec.id.trim() && rec.id.trim() !== 'N/A') ? rec.id.trim() : 'N/A';
+      const purokStr = (rec.purok && rec.purok !== 'N/A' && rec.purok !== '-') ? rec.purok.trim() : 'N/A';
+      const muniStr = (rec.municipality && rec.municipality !== 'N/A') ? rec.municipality.trim() : 'N/A';
+      const boothCode = (rec.booth && rec.booth !== 'N/A' && rec.booth !== '-') ? rec.booth.trim().toUpperCase() : 'N/A';
 
-      // Ensure coordinates are resolved
-      let geo = rec.coordinates;
+      // Ensure coordinates: DO NOT create fallback coordinates if missing
       let lat = (rec.lat !== undefined && rec.lat !== null && !isNaN(rec.lat)) ? Number(rec.lat) : null;
       let lng = (rec.lng !== undefined && rec.lng !== null && !isNaN(rec.lng)) ? Number(rec.lng) : null;
-      if (lat === null || lng === null) {
-        geo = getGeoForAddress(`${purokStr}, ${muniStr}`, this.data.employees.length);
-        lat = geo.lat;
-        lng = geo.lng;
-      } else {
-        geo = { lat, lng };
-      }
+      let geo = (lat !== null && lng !== null) ? { lat, lng } : null;
 
-      const posVal = (rec.posSerial || rec.pos || (boothCode !== '-' ? `POS-${boothCode}` : 'POS-DDN-BUFFER')).trim();
+      // POS Serial No.: DO NOT invent fallback POS
+      const posVal = (rec.posSerial && rec.posSerial !== 'N/A' && rec.posSerial !== '-') ? rec.posSerial.trim() : 'N/A';
       
       // Standardize Portable Printer dropdown values: WITH PORTABLE PRINTER or N/A
       const rawPr = (rec.printerName || rec.printerSerial || '').toUpperCase().trim();
@@ -1792,12 +1786,17 @@ class Store {
 
       // Distinguish contact phone: if available save number, if missing leave blank / 'N/A' (never invent)
       const rawPh = (rec.phone || rec.contact || '').trim();
-      const phoneVal = (rawPh && rawPh !== '0917-000-0000' && rawPh !== '-') ? rawPh : 'N/A';
+      const phoneVal = (rawPh && rawPh !== '0917-000-0000' && rawPh !== '-' && rawPh !== 'N/A') ? rawPh : 'N/A';
 
-      const statusVal = (rec.status || 'Active').trim();
+      let statusVal = 'Active';
+      if (rec.hasMissingRequired || (rec.status && rec.status.toUpperCase() === 'INACTIVE')) {
+        statusVal = 'Inactive';
+      } else if (rec.status) {
+        statusVal = rec.status.trim();
+      }
       
       // Standardize Role: Teller -> Sales Representative, Reliver -> Reliever, Team Leader
-      let roleVal = (rec.role || 'Sales Representative').trim();
+      let roleVal = (rec.role && rec.role !== 'N/A') ? rec.role.trim() : 'Sales Representative';
       const roleUpper = roleVal.toUpperCase();
       if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') roleVal = 'Sales Representative';
       else if (roleUpper.includes('RELIEVER') || roleUpper.includes('RELIVER')) roleVal = 'Reliever';
@@ -1807,7 +1806,7 @@ class Store {
 
       const emp = {
         id: newId,
-        name: empName,
+        name: finalName,
         role: roleVal,
         department: rec.department || (roleVal.toLowerCase().includes('collector') ? 'dept-col' : (roleVal.toLowerCase().includes('supervisor') ? 'dept-sup' : 'dept-tel')),
         purok: purokStr,
@@ -1830,7 +1829,7 @@ class Store {
       };
 
       // Check if booth code exists in registered booths list; if not, automatically add it!
-      if (emp.booth && emp.booth !== '-') {
+      if (emp.booth && emp.booth !== '-' && emp.booth !== 'N/A') {
         const normBooth = emp.booth.toUpperCase().trim();
         const existingBooth = this.data.booths.find(b => 
           (b.id && b.id.toUpperCase().trim() === normBooth) || 
@@ -1852,7 +1851,7 @@ class Store {
             assignedTellerId: emp.id,
             assignedTellerName: emp.name
           });
-        } else if (!existingBooth.activeTeller || existingBooth.activeTeller === '-') {
+        } else if (!existingBooth.activeTeller || existingBooth.activeTeller === '-' || existingBooth.activeTeller === 'N/A') {
           existingBooth.activeTeller = emp.name;
           existingBooth.assignedTellerId = emp.id;
           existingBooth.assignedTellerName = emp.name;
@@ -1942,21 +1941,30 @@ class Store {
         }
         if (rec.phone !== undefined || rec.contact !== undefined) {
           const ph = (rec.phone || rec.contact || '').trim();
-          const finalPh = (ph && ph !== '0917-000-0000' && ph !== '-') ? ph : 'N/A';
+          const finalPh = (ph && ph !== '0917-000-0000' && ph !== '-' && ph !== 'N/A') ? ph : 'N/A';
           updates.phone = finalPh;
           updates.contact = finalPh;
         }
-        if (rec.status) updates.status = rec.status.trim();
         if (rec.posSerial || rec.pos) {
           const ps = (rec.posSerial || rec.pos).trim();
-          updates.posSerial = ps;
-          updates.pos = ps;
+          if (ps && ps !== '-' && ps !== 'N/A') {
+            updates.posSerial = ps;
+            updates.pos = ps;
+          }
         }
         if (rec.printerName || rec.printerSerial) {
           const pr = (rec.printerName || rec.printerSerial).trim().toUpperCase();
           const normPr = (pr.includes('WITH') || pr.includes('PRT-') || pr.includes('PRINTER') || pr.includes('PORTABLE')) ? 'WITH PORTABLE PRINTER' : 'N/A';
           updates.printerName = normPr;
           updates.printerSerial = normPr;
+        }
+
+        if (rec.hasMissingRequired) {
+          updates.status = 'Inactive';
+          updates.etsStatus = 'Offline';
+        } else if (rec.status) {
+          updates.status = rec.status.trim();
+          updates.etsStatus = updates.status.toLowerCase() === 'active' ? 'Active' : 'Offline';
         }
 
         this.data.employees[idx] = { ...existing, ...updates };

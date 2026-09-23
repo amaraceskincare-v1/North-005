@@ -284,42 +284,18 @@
         sheetRecordCount++;
         const record = extractRowData(row, rowIdx + headerAnalysis.headerRowIndex + 2, headerAnalysis, sheetInfo);
 
-        // Validation: Employee Name is strictly required
-        if (!record.name) {
-          record.action = 'ERROR';
-          record.notes = sheetInfo.isRelieversSheet ? 'Missing Reliever name' : 'Missing Sales Representative name';
-          allExtractedRecords.push(record);
-          return;
-        }
-
-        // Validation: Sales Representative ID No.
-        if (!record.id) {
-          if (sheetInfo.isRelieversSheet) {
-            record.id = `DDN005-REL${Math.floor(100 + Math.random() * 900)}`;
-          } else {
-            record.action = 'ERROR';
-            record.notes = 'Missing Sales Representative ID No.';
-            allExtractedRecords.push(record);
-            return;
-          }
-        }
-
-        // Validation: Booth Code (Required for regular outlet reps, optional for relievers)
-        if ((!record.booth || record.booth === '-') && !sheetInfo.isRelieversSheet) {
-          record.action = 'ERROR';
-          record.notes = 'Missing Booth Code';
-          allExtractedRecords.push(record);
-          return;
-        }
-        if (!record.booth) {
-          record.booth = '-';
-          record.boothCode = '-';
-        }
-
         // In-file Duplicate Detection (across entire workbook)
-        const fileKey = sheetInfo.isRelieversSheet
-          ? `RELIEVER|ID:${record.id.toUpperCase()}|NAME:${record.name.toLowerCase()}`
-          : `ID:${record.id.toUpperCase()}|NAME:${record.name.toLowerCase()}|BOOTH:${record.booth.toUpperCase()}`;
+        let fileKey = '';
+        if (record.id && record.id !== 'N/A') {
+          fileKey = `ID:${record.id.toUpperCase()}`;
+        } else if (record.name && record.name !== 'N/A' && record.booth && record.booth !== 'N/A') {
+          fileKey = `NAME:${record.name.toLowerCase()}|BOOTH:${record.booth.toUpperCase()}`;
+        } else if (record.name && record.name !== 'N/A') {
+          fileKey = `NAME:${record.name.toLowerCase()}|ROW:${record.rowNum}`;
+        } else {
+          fileKey = `ROW:${sheetInfo.targetSheet}_${record.rowNum}`;
+        }
+
         if (seenInBatch.has(fileKey)) {
           record.action = 'DUPLICATE';
           record.notes = `Duplicate in workbook: identical to ${seenInBatch.get(fileKey)}`;
@@ -329,18 +305,18 @@
         seenInBatch.set(fileKey, `${sheetInfo.targetSheet} (Row ${record.rowNum})`);
 
         // Check against existing Master Registry (Primary: ID No., Secondary: Full Name)
-        const normId = record.id.toLowerCase().trim();
-        const normName = record.name.toLowerCase().trim();
-        const normBooth = record.booth.toUpperCase().trim();
+        const normId = (record.id && record.id !== 'N/A') ? record.id.toLowerCase().trim() : '';
+        const normName = (record.name && record.name !== 'N/A') ? record.name.toLowerCase().trim() : '';
+        const normBooth = (record.booth && record.booth !== 'N/A' && record.booth !== '-') ? record.booth.toUpperCase().trim() : '';
 
         const existingMatch = allExisting.find(e => {
-          if (e.id && e.id.toLowerCase().trim() === normId) return true;
-          if (e.name && e.name.toLowerCase().trim() === normName) {
+          if (normId && e.id && e.id.toLowerCase().trim() === normId) return true;
+          if (normName && e.name && e.name.toLowerCase().trim() === normName) {
             if (sheetInfo.isRelieversSheet || (e.role && e.role.toLowerCase().includes('reliever'))) {
               return true;
             }
             const eb = normalizeBoothCode(e.boothCode || e.booth);
-            if (eb === normBooth || normBooth === '-') return true;
+            if (eb === normBooth || !normBooth) return true;
           }
           return false;
         });
@@ -351,20 +327,20 @@
           record.matchName = existingMatch.name;
 
           const changes = [];
-          if (record.name && existingMatch.name && record.name.toLowerCase() !== existingMatch.name.toLowerCase()) {
+          if (record.name && record.name !== 'N/A' && existingMatch.name && record.name.toLowerCase() !== existingMatch.name.toLowerCase()) {
             changes.push(`Name: ${existingMatch.name} → ${record.name}`);
           }
-          if (record.role && existingMatch.role && record.role.toLowerCase() !== existingMatch.role.toLowerCase()) {
+          if (record.role && record.role !== 'N/A' && existingMatch.role && record.role.toLowerCase() !== existingMatch.role.toLowerCase()) {
             changes.push(`Role: ${existingMatch.role} → ${record.role}`);
           }
-          if (record.purok && existingMatch.purok && record.purok.toLowerCase() !== existingMatch.purok.toLowerCase()) {
+          if (record.purok && record.purok !== 'N/A' && existingMatch.purok && record.purok.toLowerCase() !== existingMatch.purok.toLowerCase()) {
             changes.push(`Address: ${existingMatch.purok} → ${record.purok}`);
           }
-          if (record.municipality && existingMatch.municipality && record.municipality.toLowerCase() !== existingMatch.municipality.toLowerCase()) {
+          if (record.municipality && record.municipality !== 'N/A' && existingMatch.municipality && record.municipality.toLowerCase() !== existingMatch.municipality.toLowerCase()) {
             changes.push(`Muni: ${existingMatch.municipality} → ${record.municipality}`);
           }
           const existingBooth = normalizeBoothCode(existingMatch.boothCode || existingMatch.booth);
-          if (record.booth && record.booth !== '-' && existingBooth !== record.booth) {
+          if (record.booth && record.booth !== 'N/A' && record.booth !== '-' && existingBooth !== record.booth) {
             changes.push(`Booth: ${existingBooth} → ${record.booth}`);
           }
           if (record.lat !== null && record.lng !== null) {
@@ -375,19 +351,23 @@
             }
           }
           const exPhone = existingMatch.phone || existingMatch.contact || '';
-          if (record.phone && exPhone && record.phone !== exPhone && record.phone !== 'N/A' && record.phone !== '0917-000-0000') {
+          if (record.phone && record.phone !== 'N/A' && exPhone && record.phone !== exPhone) {
             changes.push(`Phone: ${exPhone} → ${record.phone}`);
           }
           if (record.status && existingMatch.status && record.status.toLowerCase() !== existingMatch.status.toLowerCase()) {
             changes.push(`Status: ${existingMatch.status} → ${record.status}`);
           }
           const exPos = existingMatch.posSerial || existingMatch.pos || '';
-          if (record.posSerial && exPos && record.posSerial !== exPos) {
+          if (record.posSerial && record.posSerial !== 'N/A' && exPos && record.posSerial !== exPos) {
             changes.push(`POS: ${exPos} → ${record.posSerial}`);
           }
           const exPr = existingMatch.printerName || existingMatch.printerSerial || '';
-          if (record.printerName && exPr && record.printerName !== exPr) {
+          if (record.printerName && record.printerName !== 'N/A' && exPr && record.printerName !== exPr) {
             changes.push(`Printer: ${exPr} → ${record.printerName}`);
+          }
+
+          if (record.hasMissingRequired) {
+            changes.push(`Status set to INACTIVE (Missing: ${record.missingFields.join(', ')})`);
           }
 
           if (changes.length === 0) {
@@ -401,9 +381,13 @@
         } else {
           // DOES NOT EXIST IN SYSTEM -> CREATE NEW MASTER REGISTRY RECORD!
           record.action = 'NEW';
-          record.notes = sheetInfo.isRelieversSheet
-            ? `New Reliever to be added to Reliever Registry (${record.municipality || 'Davao Sector'})`
-            : `New Sales Representative to be added to Master Registry (${record.municipality})`;
+          if (record.hasMissingRequired) {
+            record.notes = `New record with missing data (${record.missingFields.join(', ')}) — Status set to INACTIVE`;
+          } else {
+            record.notes = sheetInfo.isRelieversSheet
+              ? `New Reliever to be added to Reliever Registry (${record.municipality || 'Davao Sector'})`
+              : `New Sales Representative to be added to Master Registry (${record.municipality})`;
+          }
         }
 
         allExtractedRecords.push(record);
@@ -628,13 +612,13 @@
       return '';
     };
 
-    // 1. Full Name (SALES REPRESENTATIVE or RELIEVER)
+    // 1. Full Name (SALES REPRESENTATIVE or RELIEVER) - Never invent if missing
     const rawName = getCell(headerAnalysis.srCol);
 
-    // 2. ID No. (Sales Representative / Reliever ID NO. - NOT Coordinator ID)
+    // 2. ID No. (Sales Representative / Reliever ID NO.) - Never invent if missing
     const rawId = getCell(headerAnalysis.srIdCol);
 
-    // 3. Role (Relievers sheet automatically receives 'Reliever', others receive 'Sales Representative')
+    // 3. Role (Relievers sheet receives 'Reliever', others receive 'Sales Representative')
     let roleVal = sheetInfo.isRelieversSheet ? 'Reliever' : 'Sales Representative';
     if (headerAnalysis.roleCol !== -1) {
       const explicitRole = getCell(headerAnalysis.roleCol);
@@ -652,7 +636,7 @@
     // 4. Purok / Street / Barangay (Combine PUROK + BARANGAY)
     const rawPurok = getCell(headerAnalysis.purokCol);
     const rawBarangay = getCell(headerAnalysis.brgyCol);
-    let combinedAddress = '-';
+    let combinedAddress = '';
     if (rawPurok && rawBarangay) {
       combinedAddress = `${rawPurok}, ${rawBarangay}`;
     } else if (rawPurok) {
@@ -662,16 +646,16 @@
     }
 
     // 5. Municipality (Determined strictly from worksheet tab name or column)
-    let muniVal = sheetInfo.municipality || 'Sto. Tomas';
+    let muniVal = sheetInfo.municipality || '';
     if (headerAnalysis.muniCol !== -1) {
       const rawMuni = getCell(headerAnalysis.muniCol);
       if (rawMuni) muniVal = rawMuni;
     }
 
-    // 6. Booth Code (Normalized format: DDN 352 -> DDN-352)
+    // 6. Booth Code (Normalized format: DDN 352 -> DDN-352) - Never invent if missing
     const rawBooth = normalizeBoothCode(getCell(headerAnalysis.boothCol));
 
-    // 7. GPS Coordinates (Parsed accurately from COORDINATES)
+    // 7. GPS Coordinates (Parsed accurately from COORDINATES) - Never invent if missing
     const rawCoords = getCell(headerAnalysis.coordsCol);
     let parsedLat = null;
     let parsedLng = null;
@@ -680,54 +664,72 @@
       if (m) {
         const lat = parseFloat(m[1]);
         const lng = parseFloat(m[2]);
-        if (!isNaN(lat) && !isNaN(lng)) {
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
           parsedLat = lat;
           parsedLng = lng;
         }
       }
     }
 
-    // 8. Contact Phone (Distinguish available phone vs missing; never invent 0917-000-0000)
+    // 8. Contact Phone (Never invent 0917-000-0000 or fake phone)
     const rawPhone = getCell(headerAnalysis.phoneCol);
-    const cleanPhone = (rawPhone && rawPhone !== '0917-000-0000' && rawPhone !== '-') ? rawPhone : 'N/A';
+    const cleanPhone = (rawPhone && rawPhone !== '0917-000-0000' && rawPhone !== '-') ? rawPhone : '';
 
-    // 9. Status (STATUS)
-    let rawStatus = getCell(headerAnalysis.statusCol) || 'Active';
-    if (rawStatus.toUpperCase() === 'ACTIVE') rawStatus = 'Active';
-    else if (rawStatus.toUpperCase() === 'INACTIVE') rawStatus = 'Inactive';
+    // 9. POS Serial No. (Never invent fake POS Serial)
+    const rawPos = getCell(headerAnalysis.posCol);
 
-    // 10. POS Serial No. (POS NO.)
-    const rawPos = getCell(headerAnalysis.posCol) || (rawBooth !== '-' ? `POS-${rawBooth}` : 'POS-DDN-BUFFER');
-
-    // 11. PORTABLE PRINTER NAME (Dropdown: WITH PORTABLE PRINTER or N/A)
+    // 10. Portable Printer (Dropdown: WITH PORTABLE PRINTER or N/A)
     let rawPrinter = '';
     if (headerAnalysis.printerCol !== -1) {
       rawPrinter = getCell(headerAnalysis.printerCol).toUpperCase();
     }
-    const printerVal = (rawPrinter.includes('WITH') || rawPrinter.includes('PRT-') || rawPrinter.includes('YES') || rawPrinter.includes('TRUE')) ? 'WITH PORTABLE PRINTER' : 'N/A';
+    const printerVal = rawPrinter ? ((rawPrinter.includes('WITH') || rawPrinter.includes('PRT-') || rawPrinter.includes('YES') || rawPrinter.includes('TRUE')) ? 'WITH PORTABLE PRINTER' : 'N/A') : '';
+
+    // 11. Evaluate Missing Required Fields:
+    // If required Master Registry details are missing -> STATUS = INACTIVE
+    const missingFields = [];
+    if (!rawName) missingFields.push('Sales Representative Name');
+    if (!rawId) missingFields.push('ID No.');
+    if (!sheetInfo.isRelieversSheet && (!rawBooth || rawBooth === '-' || rawBooth === 'N/A')) missingFields.push('Booth Code');
+
+    let statusVal = 'Active';
+    let hasMissingRequired = false;
+
+    const rawStatus = getCell(headerAnalysis.statusCol);
+    if (rawStatus) {
+      if (rawStatus.toUpperCase() === 'INACTIVE') statusVal = 'Inactive';
+      else if (rawStatus.toUpperCase() === 'ACTIVE') statusVal = 'Active';
+    }
+
+    if (missingFields.length > 0) {
+      hasMissingRequired = true;
+      statusVal = 'Inactive';
+    }
 
     return {
       rowNum: rowNum,
       sheetName: sheetInfo.targetSheet,
-      id: rawId,
-      name: rawName,
+      id: rawId || 'N/A',
+      name: rawName || 'N/A',
       role: roleVal,
-      purok: combinedAddress,
-      barangay: rawBarangay,
-      municipality: muniVal,
-      booth: rawBooth,
-      boothCode: rawBooth,
+      purok: combinedAddress || 'N/A',
+      barangay: rawBarangay || 'N/A',
+      municipality: muniVal || 'N/A',
+      booth: (rawBooth && rawBooth !== '-') ? rawBooth : 'N/A',
+      boothCode: (rawBooth && rawBooth !== '-') ? rawBooth : 'N/A',
       coordinates: (parsedLat !== null && parsedLng !== null) ? { lat: parsedLat, lng: parsedLng } : null,
       lat: parsedLat,
       lng: parsedLng,
       rawCoordinates: rawCoords,
-      phone: cleanPhone,
-      contact: cleanPhone,
-      status: rawStatus,
-      posSerial: rawPos,
-      pos: rawPos,
-      printerName: printerVal,
-      printerSerial: printerVal,
+      phone: cleanPhone || 'N/A',
+      contact: cleanPhone || 'N/A',
+      status: statusVal,
+      posSerial: rawPos || 'N/A',
+      pos: rawPos || 'N/A',
+      printerName: printerVal || 'N/A',
+      printerSerial: printerVal || 'N/A',
+      hasMissingRequired: hasMissingRequired,
+      missingFields: missingFields,
       action: '',
       matchId: '',
       matchName: '',
@@ -868,7 +870,7 @@
 
     if (list.length === 0) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="11" style="text-align: center; padding: 30px; color: var(--text-muted);">No records match the selected filters.</td>`;
+      tr.innerHTML = `<td colspan="12" style="text-align: center; padding: 30px; color: var(--text-muted);">No records match the selected filters.</td>`;
       tbody.appendChild(tr);
       return;
     }
@@ -876,7 +878,7 @@
     list.slice(0, 250).forEach(r => {
       const tr = document.createElement('tr');
 
-      // Status Badge
+      // Status Badge (Action)
       let badgeHtml = '';
       if (r.action === 'NEW') {
         badgeHtml = '<span class="badge badge-success" style="font-weight: 800; font-size: 11px; padding: 2px 7px;">NEW</span>';
@@ -890,23 +892,60 @@
         badgeHtml = '<span class="badge badge-danger" style="font-weight: 800; font-size: 11px; padding: 2px 7px;">ERROR</span>';
       }
 
-      // Coordinates display
+      // Record Status Badge (Active / Inactive)
+      const isInactive = (r.status || '').toUpperCase() === 'INACTIVE';
+      const statusBadge = isInactive
+        ? '<span class="badge badge-danger" style="font-weight: 800; font-size: 10.5px; padding: 2px 7px; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);">INACTIVE</span>'
+        : '<span class="badge badge-success" style="font-weight: 800; font-size: 10.5px; padding: 2px 7px;">ACTIVE</span>';
+
+      // Format missing cells as Blank / N/A
+      const idDisplay = (r.id && r.id !== 'N/A')
+        ? `<span style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--primary);">${r.id}</span>`
+        : `<span style="color: var(--text-dim); font-style: italic; font-size: 11px;">Blank / N/A</span>`;
+
+      const nameDisplay = (r.name && r.name !== 'N/A')
+        ? `<strong style="color: var(--text-main);">${r.name}</strong>`
+        : `<span style="color: var(--text-dim); font-style: italic; font-weight: 600;">Blank / N/A</span>`;
+
+      const roleDisplay = `<span class="badge badge-info" style="font-size: 10px; font-weight: 700; text-transform: uppercase;">${r.role || 'N/A'}</span>`;
+
+      const purokDisplay = (r.purok && r.purok !== 'N/A' && r.purok !== '-')
+        ? `<span style="font-size: 11.5px; color: var(--text-main);">${r.purok}</span>`
+        : `<span style="color: var(--text-dim); font-style: italic;">N/A</span>`;
+
+      const muniDisplay = (r.municipality && r.municipality !== 'N/A')
+        ? `<strong style="font-size: 11.5px; color: var(--text-main);">${r.municipality}</strong>`
+        : `<span style="color: var(--text-dim); font-style: italic;">N/A</span>`;
+
+      const boothDisplay = (r.booth && r.booth !== 'N/A' && r.booth !== '-')
+        ? `<code style="font-weight: 700; font-size: 11.5px; color: var(--primary);">${r.booth}</code>`
+        : `<span style="color: var(--text-dim); font-style: italic;">N/A</span>`;
+
       const coordDisplay = (r.lat !== null && r.lng !== null) 
-        ? `${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}` 
-        : (r.rawCoordinates ? `<span style="color:var(--warning)">${r.rawCoordinates}</span>` : '<span style="color:var(--text-dim)">-</span>');
+        ? `<span style="font-family: var(--font-mono); font-size: 11px;">${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}</span>` 
+        : (r.rawCoordinates ? `<span style="color:var(--warning); font-size: 11px;">${r.rawCoordinates}</span>` : `<span style="color: var(--text-dim); font-style: italic;">N/A</span>`);
+
+      const phoneDisplay = (r.phone && r.phone !== 'N/A' && r.phone !== '-')
+        ? `<span style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);">${r.phone}</span>`
+        : `<span style="color: var(--text-dim); font-style: italic;">N/A</span>`;
+
+      const posDisplay = (r.posSerial && r.posSerial !== 'N/A' && r.posSerial !== '-')
+        ? `<span style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);">${r.posSerial}</span>`
+        : `<span style="color: var(--text-dim); font-style: italic;">N/A</span>`;
 
       tr.innerHTML = `
         <td style="text-align: center;">${badgeHtml}</td>
-        <td style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--primary);">${r.id || '<span style="color:var(--danger)">[Missing]</span>'}</td>
-        <td style="font-weight: 700; color: var(--text-main);">${r.name || '<span style="color:var(--danger)">[Missing]</span>'}</td>
-        <td><span class="badge badge-info" style="font-size: 10px; font-weight: 700; text-transform: uppercase;">${r.role}</span></td>
-        <td style="font-size: 11.5px; color: var(--text-main);">${r.purok}</td>
-        <td><strong style="font-size: 11.5px; color: var(--text-main);">${r.municipality}</strong></td>
-        <td><code style="font-weight: 700; font-size: 11.5px; color: var(--primary);">${r.booth}</code></td>
-        <td style="font-family: var(--font-mono); font-size: 11px;">${coordDisplay}</td>
-        <td style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);">${r.phone || '-'}</td>
-        <td style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);">${r.posSerial || '-'}</td>
-        <td style="font-size: 11px; color: ${r.action === 'ERROR' ? 'var(--danger)' : r.action === 'UPDATE' ? '#60a5fa' : 'var(--text-muted)'}; line-height: 1.4;">
+        <td>${idDisplay}</td>
+        <td>${nameDisplay}</td>
+        <td>${roleDisplay}</td>
+        <td style="text-align: center;">${statusBadge}</td>
+        <td>${purokDisplay}</td>
+        <td>${muniDisplay}</td>
+        <td>${boothDisplay}</td>
+        <td>${coordDisplay}</td>
+        <td>${phoneDisplay}</td>
+        <td>${posDisplay}</td>
+        <td style="font-size: 11px; color: ${r.action === 'ERROR' ? 'var(--danger)' : r.action === 'UPDATE' ? '#60a5fa' : isInactive ? '#fbbf24' : 'var(--text-muted)'}; line-height: 1.4;">
           ${r.notes}
         </td>
       `;
