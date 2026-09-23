@@ -185,6 +185,13 @@ class EtsMapEngine {
     const isDraggable = this.calibrationMode;
 
     allStaff.forEach(emp => {
+      // Check if coordinates exist and are valid numbers
+      const validLat = emp.lat !== undefined && emp.lat !== null && emp.lat !== '' && !isNaN(emp.lat);
+      const validLng = emp.lng !== undefined && emp.lng !== null && emp.lng !== '' && !isNaN(emp.lng);
+      if (!validLat || !validLng) {
+        return; // Skip rendering marker if coordinates are cleared or unavailable
+      }
+
       // Determine Municipality for pin color coding
       let muni = emp.municipality || '';
       if (!muni || muni === '-') {

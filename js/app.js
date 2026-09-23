@@ -808,8 +808,8 @@ function renderEmployeesTable(customList = null) {
     const displayBooth = (emp.boothCode && emp.boothCode !== '-') ? emp.boothCode : (emp.booth && emp.booth !== '-' ? emp.booth : '-');
 
     // 4. GPS Coordinates (Checks lat/lng or coordinates object)
-    let latVal = (emp.lat !== undefined && emp.lat !== null && !isNaN(emp.lat)) ? Number(emp.lat) : (emp.coordinates && emp.coordinates.lat ? Number(emp.coordinates.lat) : null);
-    let lngVal = (emp.lng !== undefined && emp.lng !== null && !isNaN(emp.lng)) ? Number(emp.lng) : (emp.coordinates && emp.coordinates.lng ? Number(emp.coordinates.lng) : null);
+    let latVal = (emp.lat !== undefined && emp.lat !== null && emp.lat !== '' && !isNaN(emp.lat)) ? Number(emp.lat) : (emp.coordinates && emp.coordinates.lat !== undefined && emp.coordinates.lat !== null && emp.coordinates.lat !== '' && !isNaN(emp.coordinates.lat) ? Number(emp.coordinates.lat) : null);
+    let lngVal = (emp.lng !== undefined && emp.lng !== null && emp.lng !== '' && !isNaN(emp.lng)) ? Number(emp.lng) : (emp.coordinates && emp.coordinates.lng !== undefined && emp.coordinates.lng !== null && emp.coordinates.lng !== '' && !isNaN(emp.coordinates.lng) ? Number(emp.coordinates.lng) : null);
     const gpsDisplay = (latVal !== null && lngVal !== null) ? `${latVal.toFixed(6)}, ${lngVal.toFixed(6)}` : '-';
 
     // 5. Contact Phone
@@ -1005,7 +1005,7 @@ window.updateEmployeePrinter = function(empId, printerStatus) {
 };
 
 window.openAddEmployeeModal = function() {
-  sfx.playClick();
+  if (window.sfx) sfx.playClick();
   document.getElementById('modal-employee-title').textContent = 'Register New Staff Member';
   document.getElementById('emp-form-id').value = '';
   const idDisplay = document.getElementById('emp-form-id-display');
@@ -1019,13 +1019,13 @@ window.openAddEmployeeModal = function() {
   document.getElementById('emp-form-phone').value = '';
   document.getElementById('emp-form-pos').value = '';
   document.getElementById('emp-form-printer').value = 'WITH PORTABLE PRINTER';
-  document.getElementById('emp-form-lat').value = '7.5303';
-  document.getElementById('emp-form-lng').value = '125.6264';
+  document.getElementById('emp-form-lat').value = '';
+  document.getElementById('emp-form-lng').value = '';
   document.getElementById('modal-employee').classList.add('active');
 };
 
 window.editEmployee = function(id) {
-  sfx.playClick();
+  if (window.sfx) sfx.playClick();
   const store = window.appStore;
   const emp = store.getEmployees().find(e => e.id === id) || 
               (store.data.relievers && store.data.relievers.find(r => r.id === id));
@@ -1061,8 +1061,23 @@ window.editEmployee = function(id) {
   const isWithPr = rawPr.includes('WITH') || rawPr.includes('PRT-') || rawPr.includes('PRINTER') || rawPr.includes('PORTABLE');
   document.getElementById('emp-form-printer').value = isWithPr ? 'WITH PORTABLE PRINTER' : 'N/A';
 
-  document.getElementById('emp-form-lat').value = emp.lat || 7.5303;
-  document.getElementById('emp-form-lng').value = emp.lng || 125.6264;
+  // Extract coordinate values from direct lat/lng or coordinates object
+  let latVal = null;
+  if (emp.lat !== undefined && emp.lat !== null && emp.lat !== '' && !isNaN(emp.lat)) {
+    latVal = Number(emp.lat);
+  } else if (emp.coordinates && emp.coordinates.lat !== undefined && emp.coordinates.lat !== null && emp.coordinates.lat !== '' && !isNaN(emp.coordinates.lat)) {
+    latVal = Number(emp.coordinates.lat);
+  }
+
+  let lngVal = null;
+  if (emp.lng !== undefined && emp.lng !== null && emp.lng !== '' && !isNaN(emp.lng)) {
+    lngVal = Number(emp.lng);
+  } else if (emp.coordinates && emp.coordinates.lng !== undefined && emp.coordinates.lng !== null && emp.coordinates.lng !== '' && !isNaN(emp.coordinates.lng)) {
+    lngVal = Number(emp.coordinates.lng);
+  }
+
+  document.getElementById('emp-form-lat').value = latVal !== null ? latVal : '';
+  document.getElementById('emp-form-lng').value = lngVal !== null ? lngVal : '';
   document.getElementById('modal-employee').classList.add('active');
 };
 
@@ -1091,6 +1106,39 @@ window.saveEmployeeForm = function() {
   // Standardized Portable Printer
   const printerVal = document.getElementById('emp-form-printer').value === 'WITH PORTABLE PRINTER' ? 'WITH PORTABLE PRINTER' : 'N/A';
 
+  // Validate GPS Coordinates (Section 5 & 6)
+  const rawLat = document.getElementById('emp-form-lat').value.trim();
+  const rawLng = document.getElementById('emp-form-lng').value.trim();
+
+  let finalLat = null;
+  let finalLng = null;
+
+  if (rawLat !== '') {
+    const numLat = Number(rawLat);
+    if (isNaN(numLat) || numLat < -90 || numLat > 90) {
+      alert('Invalid latitude. Please enter a value between -90 and 90.');
+      document.getElementById('emp-form-lat').focus();
+      return;
+    }
+    finalLat = numLat;
+  }
+
+  if (rawLng !== '') {
+    const numLng = Number(rawLng);
+    if (isNaN(numLng) || numLng < -180 || numLng > 180) {
+      alert('Invalid longitude. Please enter a value between -180 and 180.');
+      document.getElementById('emp-form-lng').focus();
+      return;
+    }
+    finalLng = numLng;
+  }
+
+  // If one is given and the other is blank, prompt user
+  if ((finalLat !== null && finalLng === null) || (finalLat === null && finalLng !== null)) {
+    alert('Please enter both Latitude and Longitude, or leave both blank to clear GPS coordinates.');
+    return;
+  }
+
   // Get existing status if editing, or default to 'ACTIVE'
   let status = 'ACTIVE';
   if (origId) {
@@ -1117,25 +1165,42 @@ window.saveEmployeeForm = function() {
     posSerial: document.getElementById('emp-form-pos').value || (boothCode !== '-' ? `POS-${boothCode}` : 'POS-N9-GEN'),
     printerName: printerVal,
     printerSerial: printerVal,
-    lat: parseFloat(document.getElementById('emp-form-lat').value) || 7.5303,
-    lng: parseFloat(document.getElementById('emp-form-lng').value) || 125.6264,
-    etsStatus: 'Active'
+    lat: finalLat,
+    lng: finalLng,
+    coordinates: (finalLat !== null && finalLng !== null) ? { lat: finalLat, lng: finalLng } : null,
+    etsStatus: (finalLat !== null && finalLng !== null) ? 'Active' : 'Unanchored'
   };
 
-  if (origId) {
-    if (customId && customId !== origId) {
-      payload.id = customId;
+  try {
+    let savedRecord = null;
+    if (origId) {
+      if (customId && customId !== origId) {
+        payload.id = customId;
+      }
+      savedRecord = window.appStore.updateEmployee(origId, payload);
+      if (!savedRecord) {
+        alert(`Failed to update GPS Coordinates. Record "${origId}" could not be found.`);
+        return;
+      }
+    } else {
+      savedRecord = window.appStore.addEmployee(payload);
+      if (!savedRecord) {
+        alert('Failed to register employee. Please try again.');
+        return;
+      }
     }
-    window.appStore.updateEmployee(origId, payload);
-  } else {
-    window.appStore.addEmployee(payload);
-  }
 
-  sfx.playChime();
-  window.closeModals();
-  renderEmployeesTable();
-  if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
-  if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
+    if (window.sfx) window.sfx.playChime();
+    window.closeModals();
+    renderEmployeesTable();
+    if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
+    if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
+
+    alert('GPS Coordinates updated successfully.');
+  } catch (err) {
+    console.error('Error saving employee record:', err);
+    alert(`Unable to save GPS Coordinates: ${err.message || err}`);
+  }
 };
 
 // =========================================================================

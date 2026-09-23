@@ -1182,12 +1182,30 @@ class Store {
               if (!e.boothCode && e.booth) e.boothCode = e.booth;
 
               // Lat and lng
-              const latVal = (e.lat !== undefined && e.lat !== null && !isNaN(e.lat)) ? Number(e.lat) : (e.coordinates && e.coordinates.lat ? Number(e.coordinates.lat) : null);
-              const lngVal = (e.lng !== undefined && e.lng !== null && !isNaN(e.lng)) ? Number(e.lng) : (e.coordinates && e.coordinates.lng ? Number(e.coordinates.lng) : null);
+              const hasLat = e.lat !== undefined && e.lat !== null && e.lat !== '' && !isNaN(e.lat);
+              const hasLng = e.lng !== undefined && e.lng !== null && e.lng !== '' && !isNaN(e.lng);
+              const hasCoordLat = e.coordinates && e.coordinates.lat !== undefined && e.coordinates.lat !== null && e.coordinates.lat !== '' && !isNaN(e.coordinates.lat);
+              const hasCoordLng = e.coordinates && e.coordinates.lng !== undefined && e.coordinates.lng !== null && e.coordinates.lng !== '' && !isNaN(e.coordinates.lng);
+
+              let latVal = null;
+              let lngVal = null;
+
+              if (hasLat && hasLng) {
+                latVal = Number(e.lat);
+                lngVal = Number(e.lng);
+              } else if (hasCoordLat && hasCoordLng && (e.lat === undefined || e.lat === '')) {
+                latVal = Number(e.coordinates.lat);
+                lngVal = Number(e.coordinates.lng);
+              }
+
               if (latVal !== null && lngVal !== null) {
                 e.lat = latVal;
                 e.lng = lngVal;
                 e.coordinates = { lat: latVal, lng: lngVal };
+              } else {
+                e.lat = null;
+                e.lng = null;
+                e.coordinates = null;
               }
 
               // POS and printer
@@ -1645,6 +1663,30 @@ class Store {
     const idx = this.data.employees.findIndex(e => e.id === id);
     if (idx !== -1) {
       this.data.employees[idx] = { ...this.data.employees[idx], ...updates };
+
+      // Explicitly handle GPS coordinates & coordinates object persistence
+      if (updates.lat === null || updates.lng === null || updates.lat === '' || updates.lng === '') {
+        this.data.employees[idx].lat = null;
+        this.data.employees[idx].lng = null;
+        this.data.employees[idx].coordinates = null;
+      } else if (updates.lat !== undefined && updates.lng !== undefined && !isNaN(updates.lat) && !isNaN(updates.lng)) {
+        const nLat = Number(updates.lat);
+        const nLng = Number(updates.lng);
+        this.data.employees[idx].lat = nLat;
+        this.data.employees[idx].lng = nLng;
+        this.data.employees[idx].coordinates = { lat: nLat, lng: nLng };
+      }
+
+      // Sync booth if outlet booth
+      const boothCode = this.data.employees[idx].boothCode;
+      if (boothCode && boothCode !== '-') {
+        const booth = this.data.booths.find(b => b.id === boothCode || b.assignedTellerId === id);
+        if (booth) {
+          booth.lat = this.data.employees[idx].lat;
+          booth.lng = this.data.employees[idx].lng;
+        }
+      }
+
       this.save();
       return this.data.employees[idx];
     }
@@ -1652,6 +1694,17 @@ class Store {
       const rIdx = this.data.relievers.findIndex(r => r.id === id);
       if (rIdx !== -1) {
         this.data.relievers[rIdx] = { ...this.data.relievers[rIdx], ...updates };
+        if (updates.lat === null || updates.lng === null || updates.lat === '' || updates.lng === '') {
+          this.data.relievers[rIdx].lat = null;
+          this.data.relievers[rIdx].lng = null;
+          this.data.relievers[rIdx].coordinates = null;
+        } else if (updates.lat !== undefined && updates.lng !== undefined && !isNaN(updates.lat) && !isNaN(updates.lng)) {
+          const nLat = Number(updates.lat);
+          const nLng = Number(updates.lng);
+          this.data.relievers[rIdx].lat = nLat;
+          this.data.relievers[rIdx].lng = nLng;
+          this.data.relievers[rIdx].coordinates = { lat: nLat, lng: nLng };
+        }
         this.save();
         return this.data.relievers[rIdx];
       }

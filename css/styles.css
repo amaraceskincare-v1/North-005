@@ -504,6 +504,40 @@ button, input, select, textarea {
   gap: 16px;
 }
 
+/* Master Data Registry Header - Actions strictly on the Right Side on Desktop */
+.registry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 22px;
+  gap: 16px;
+  flex-wrap: nowrap;
+}
+
+.registry-header .view-title-group {
+  flex: 0 1 auto;
+}
+
+.registry-header .view-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1200px) {
+  .registry-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .registry-header .view-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 .view-title-group h2 {
   font-size: 22px;
   font-weight: 800;

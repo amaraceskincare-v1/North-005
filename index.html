@@ -493,13 +493,14 @@
              VIEW 2: MASTER DATA - EMPLOYEE & BOOTH REGISTRY (DAVAO DEL NORTE)
              =================================================================== -->
         <section id="view-employees" class="view-panel">
-          <div class="view-header">
-            <div class="view-title-group">
+          <div class="view-header registry-header" style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: nowrap; margin-bottom: 22px;">
+            <div class="view-title-group" style="flex: 0 1 auto; min-width: 280px;">
               <h2>System Master Data Registry: Davao Del Norte Sector (DDN005)</h2>
-              <p>Complete official registry of Collectors (5), OUTLETS / Sales Representatives (78), Relievers, Home Addresses, and
-                Assigned Booth Codes</p>
+              <p style="margin: 0; font-size: 13px; color: var(--text-muted);">
+                Complete official registry of Collectors (5), OUTLETS / Sales Representatives (78), Relievers, Home Addresses, and Assigned Booth Codes
+              </p>
             </div>
-            <div class="view-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <div class="view-actions" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; flex-wrap: wrap;">
               <input type="text" id="employee-search-input" class="form-input"
                 placeholder="Search by name, ID, address, booth..." style="width: 220px;"
                 oninput="window.filterEmployees()">
@@ -2278,14 +2279,17 @@
             </select>
           </div>
         </div>
+        <div class="form-section-title" style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-top: 8px; margin-bottom: 2px;">
+          GPS Coordinates
+        </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
-            <label class="form-label">Latitude</label>
-            <input type="number" step="0.000001" id="emp-form-lat" class="form-input" value="7.5303">
+            <label class="form-label">Latitude (-90 to 90)</label>
+            <input type="text" id="emp-form-lat" class="form-input" placeholder="e.g. 7.530300 (or leave blank)">
           </div>
           <div class="form-group">
-            <label class="form-label">Longitude</label>
-            <input type="number" step="0.000001" id="emp-form-lng" class="form-input" value="125.6264">
+            <label class="form-label">Longitude (-180 to 180)</label>
+            <input type="text" id="emp-form-lng" class="form-input" placeholder="e.g. 125.626400 (or leave blank)">
           </div>
         </div>
         <div class="form-group">
