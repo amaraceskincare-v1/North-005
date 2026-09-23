@@ -813,11 +813,11 @@ window.goToRegistryPage = function(page) {
 
 window.updateEmployeeStatus = function(id, newStatus) {
   sfx.playClick();
-  window.appStore.updateEmployee(id, { status: newStatus });
+  const normStatus = (newStatus || 'ACTIVE').toUpperCase();
+  window.appStore.updateEmployee(id, { status: normStatus });
   renderEmployeesTable();
   if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
   if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
-  alert(`Staff member status updated to ${newStatus}.`);
 };
 
 let pendingDeleteEmployeeId = null;
@@ -867,6 +867,9 @@ function renderEmployeesTable(customList = null) {
   if (!tbody) return;
 
   const store = window.appStore;
+  if (store.sanitizeEmployeeIds) {
+    store.sanitizeEmployeeIds();
+  }
   const rawEmployees = store.getEmployees() || [];
   // Permanently filter out any fake buffer relievers
   const allStaff = rawEmployees.filter(e => !e.name || !e.name.includes('Buffer Reliever'));
@@ -1277,11 +1280,17 @@ window.editEmployee = function(id) {
   document.getElementById('emp-form-phone').value = (emp.phone && emp.phone !== '0917-000-0000' && emp.phone !== '-' && emp.phone !== 'N/A') ? emp.phone : '';
   document.getElementById('emp-form-pos').value = emp.posSerial || '';
   
-  // Status dropdown selection (ACTIVE / INACTIVE)
+  // Status dropdown selection (ACTIVE / INACTIVE / TERMINATED)
   const statusUpper = (emp.status || 'ACTIVE').toUpperCase();
   const statusEl = document.getElementById('emp-form-status');
   if (statusEl) {
-    statusEl.value = (statusUpper === 'INACTIVE' || statusUpper === 'TERMINATED') ? 'INACTIVE' : 'ACTIVE';
+    if (statusUpper === 'TERMINATED') {
+      statusEl.value = 'TERMINATED';
+    } else if (statusUpper === 'INACTIVE') {
+      statusEl.value = 'INACTIVE';
+    } else {
+      statusEl.value = 'ACTIVE';
+    }
   }
 
   // Standardize Portable Printer dropdown selection
@@ -1318,7 +1327,7 @@ window.saveEmployeeForm = function() {
   let name = document.getElementById('emp-form-name').value.trim();
   const role = document.getElementById('emp-form-role').value;
   const statusEl = document.getElementById('emp-form-status');
-  const selectedStatus = statusEl ? statusEl.value : 'ACTIVE';
+  const selectedStatus = statusEl ? statusEl.value.toUpperCase() : 'ACTIVE';
 
   // Allow blank/N/A name if status is INACTIVE or role is N/A
   if (!name) {

@@ -1237,6 +1237,58 @@ class Store {
               if (!e.contact && e.phone) e.contact = e.phone;
             });
           }
+
+          // Ensure all employees and relievers have guaranteed unique, valid IDs and standardized statuses
+          const seenIds = new Set();
+          let relSeq = 1;
+          let staffSeq = 1;
+
+          if (parsed.employees && Array.isArray(parsed.employees)) {
+            parsed.employees.forEach(e => {
+              let id = (e.id || '').trim();
+              const isRel = (e.role || '').toUpperCase().includes('RELIEVER') || (e.role || '').toUpperCase().includes('RELIVER');
+              if (!id || id === 'N/A' || id === '-' || seenIds.has(id)) {
+                let genId;
+                const prefix = isRel ? 'DDN005-REL' : 'DDN005-SR';
+                do {
+                  const num = isRel ? String(relSeq++).padStart(3, '0') : String(staffSeq++).padStart(4, '0');
+                  genId = `${prefix}${num}`;
+                } while (seenIds.has(genId));
+                e.id = genId;
+                id = genId;
+                needsSave = true;
+              }
+              seenIds.add(id);
+
+              const sUp = (e.status || 'ACTIVE').toUpperCase();
+              if (sUp === 'TERMINATED') e.status = 'TERMINATED';
+              else if (sUp === 'INACTIVE') e.status = 'INACTIVE';
+              else e.status = 'ACTIVE';
+            });
+          }
+
+          if (parsed.relievers && Array.isArray(parsed.relievers)) {
+            parsed.relievers.forEach(r => {
+              const matchEmp = parsed.employees ? parsed.employees.find(e => e.name && e.name.trim().toLowerCase() === (r.name || '').trim().toLowerCase()) : null;
+              if (matchEmp) {
+                r.id = matchEmp.id;
+                r.status = matchEmp.status;
+              } else {
+                let id = (r.id || '').trim();
+                if (!id || id === 'N/A' || id === '-' || seenIds.has(id)) {
+                  let genId;
+                  do {
+                    genId = `DDN005-REL${String(relSeq++).padStart(3, '0')}`;
+                  } while (seenIds.has(genId));
+                  r.id = genId;
+                  needsSave = true;
+                }
+                seenIds.add(r.id);
+                const sUp = (r.status || 'ACTIVE').toUpperCase();
+                r.status = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+              }
+            });
+          }
           if (!parsed.ocrDocuments) {
             const fresh = buildDefaultStore();
             parsed.ocrDocuments = fresh.ocrDocuments;
@@ -1678,8 +1730,77 @@ class Store {
     return updated;
   }
 
+  sanitizeEmployeeIds() {
+    const seenIds = new Set();
+    let relSeq = 1;
+    let staffSeq = 1;
+    let modified = false;
+
+    if (this.data.employees && Array.isArray(this.data.employees)) {
+      this.data.employees.forEach(e => {
+        let id = (e.id || '').trim();
+        const isRel = (e.role || '').toUpperCase().includes('RELIEVER') || (e.role || '').toUpperCase().includes('RELIVER');
+        if (!id || id === 'N/A' || id === '-' || seenIds.has(id)) {
+          let genId;
+          const prefix = isRel ? 'DDN005-REL' : 'DDN005-SR';
+          do {
+            const num = isRel ? String(relSeq++).padStart(3, '0') : String(staffSeq++).padStart(4, '0');
+            genId = `${prefix}${num}`;
+          } while (seenIds.has(genId));
+          e.id = genId;
+          id = genId;
+          modified = true;
+        }
+        seenIds.add(id);
+
+        const sUp = (e.status || 'ACTIVE').toUpperCase();
+        const normStatus = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+        if (e.status !== normStatus) {
+          e.status = normStatus;
+          modified = true;
+        }
+      });
+    }
+
+    if (this.data.relievers && Array.isArray(this.data.relievers)) {
+      this.data.relievers.forEach(r => {
+        const matchEmp = this.data.employees ? this.data.employees.find(e => e.name && e.name.trim().toLowerCase() === (r.name || '').trim().toLowerCase()) : null;
+        if (matchEmp) {
+          if (r.id !== matchEmp.id || r.status !== matchEmp.status) {
+            r.id = matchEmp.id;
+            r.status = matchEmp.status;
+            modified = true;
+          }
+        } else {
+          let id = (r.id || '').trim();
+          if (!id || id === 'N/A' || id === '-' || seenIds.has(id)) {
+            let genId;
+            do {
+              genId = `DDN005-REL${String(relSeq++).padStart(3, '0')}`;
+            } while (seenIds.has(genId));
+            r.id = genId;
+            modified = true;
+          }
+          seenIds.add(r.id);
+          const sUp = (r.status || 'ACTIVE').toUpperCase();
+          const normStatus = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+          if (r.status !== normStatus) {
+            r.status = normStatus;
+            modified = true;
+          }
+        }
+      });
+    }
+
+    if (modified) {
+      this.save();
+    }
+  }
+
   addEmployee(emp) {
     emp.id = emp.id || `DDN005-SR${Math.floor(1000 + Math.random() * 9000)}`;
+    const sUp = (emp.status || 'ACTIVE').toUpperCase();
+    emp.status = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
     this.data.employees.unshift(emp);
     this.save();
     return emp;
@@ -1687,6 +1808,12 @@ class Store {
 
   updateEmployee(id, updates) {
     let result = null;
+
+    if (updates.status) {
+      const sUp = updates.status.toUpperCase();
+      updates.status = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+    }
+
     const idx = this.data.employees.findIndex(e => e.id === id);
     if (idx !== -1) {
       this.data.employees[idx] = { ...this.data.employees[idx], ...updates };
@@ -1725,7 +1852,7 @@ class Store {
     }
 
     if (this.data.relievers) {
-      const rIdx = this.data.relievers.findIndex(r => r.id === id);
+      const rIdx = this.data.relievers.findIndex(r => r.id === id || (result && r.name && r.name.toLowerCase() === result.name.toLowerCase()));
       if (rIdx !== -1) {
         this.data.relievers[rIdx] = { ...this.data.relievers[rIdx], ...updates };
         if (updates.lat === null || updates.lng === null || updates.lat === '' || updates.lng === '') {
@@ -1778,7 +1905,12 @@ class Store {
       const empName = (rec.name || '').trim();
       const finalName = (empName && empName !== 'N/A') ? empName : 'N/A';
 
-      const newId = (rec.id && rec.id.trim() && rec.id.trim() !== 'N/A') ? rec.id.trim() : 'N/A';
+      let newId = (rec.id && rec.id.trim() && rec.id.trim() !== 'N/A') ? rec.id.trim() : null;
+      if (!newId) {
+        const isRel = (rec.role || '').toUpperCase().includes('RELIEVER');
+        const prefix = isRel ? 'DDN005-REL' : 'DDN005-SR';
+        newId = `${prefix}${Math.floor(1000 + Math.random() * 9000)}`;
+      }
       const purokStr = (rec.purok && rec.purok !== 'N/A' && rec.purok !== '-') ? rec.purok.trim() : 'N/A';
       const muniStr = (rec.municipality && rec.municipality !== 'N/A') ? rec.municipality.trim() : 'N/A';
       const boothCode = (rec.booth && rec.booth !== 'N/A' && rec.booth !== '-') ? rec.booth.trim().toUpperCase() : 'N/A';
@@ -1799,11 +1931,12 @@ class Store {
       const rawPh = (rec.phone || rec.contact || '').trim();
       const phoneVal = (rawPh && rawPh !== '0917-000-0000' && rawPh !== '-' && rawPh !== 'N/A') ? rawPh : 'N/A';
 
-      let statusVal = 'Active';
+      let statusVal = 'ACTIVE';
       if (finalName === 'N/A' || rec.hasMissingRequired || (rec.status && rec.status.toUpperCase() === 'INACTIVE')) {
-        statusVal = 'Inactive';
+        statusVal = 'INACTIVE';
       } else if (rec.status) {
-        statusVal = rec.status.trim();
+        const sUp = rec.status.trim().toUpperCase();
+        statusVal = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
       }
       
       // Standardize Role: Teller -> Sales Representative, Reliver -> Reliever, Team Leader, missing -> N/A
@@ -1874,6 +2007,11 @@ class Store {
       }
 
       this.data.employees.push(emp);
+      if (emp.role && emp.role.toUpperCase().includes('RELIEVER') && this.data.relievers) {
+        if (!this.data.relievers.some(r => r.id === emp.id)) {
+          this.data.relievers.push(emp);
+        }
+      }
       addedCount++;
     });
 
@@ -1975,11 +2113,12 @@ class Store {
         }
 
         if (rec.hasMissingRequired) {
-          updates.status = 'Inactive';
+          updates.status = 'INACTIVE';
           updates.etsStatus = 'Offline';
         } else if (rec.status) {
-          updates.status = rec.status.trim();
-          updates.etsStatus = updates.status.toLowerCase() === 'active' ? 'Active' : 'Offline';
+          const sUp = rec.status.trim().toUpperCase();
+          updates.status = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+          updates.etsStatus = updates.status === 'ACTIVE' ? 'Active' : 'Offline';
         }
 
         this.data.employees[idx] = { ...existing, ...updates };
