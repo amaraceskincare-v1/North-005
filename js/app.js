@@ -782,7 +782,7 @@ window.filterRegistryCategory = function(cat) {
   currentRegistryCategory = cat;
   registryCurrentPage = 1;
 
-  ['all', 'supervisors', 'collectors', 'tellers', 'relievers'].forEach(c => {
+  ['all', 'supervisors', 'collectors', 'tellers', 'relievers', 'inactive-booths'].forEach(c => {
     const btn = document.getElementById(`tab-btn-${c}`);
     if (btn) {
       if (c === cat) {
@@ -815,6 +815,9 @@ window.updateEmployeeStatus = function(id, newStatus) {
   sfx.playClick();
   window.appStore.updateEmployee(id, { status: newStatus });
   renderEmployeesTable();
+  if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
+  if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
+  alert(`Staff member status updated to ${newStatus}.`);
 };
 
 let pendingDeleteEmployeeId = null;
@@ -872,17 +875,104 @@ function renderEmployeesTable(customList = null) {
   const supervisors = allStaff.filter(e => (e.role || '').toUpperCase().includes('SUPERVISOR') || (e.role || '').toUpperCase().includes('TEAM LEADER'));
   const collectors = allStaff.filter(e => (e.role || '').toUpperCase().includes('COLLECTOR'));
   const relieversList = allStaff.filter(e => (e.role || '').toUpperCase().includes('RELIEVER') || (e.role || '').toUpperCase().includes('RELIVER'));
+
+  // Section 4: 3. Sales Representatives Registry must count ACTIVE Sales Representatives only.
+  // Inactive Sales Representatives must NOT be included in this count.
   const tellers = allStaff.filter(e => {
     const r = (e.role || '').toUpperCase();
-    return !r.includes('RELIEVER') && !r.includes('RELIVER') && !r.includes('SUPERVISOR') && !r.includes('COLLECTOR') && !r.includes('TEAM LEADER');
+    const isOtherRole = r.includes('RELIEVER') || r.includes('RELIVER') || r.includes('SUPERVISOR') || r.includes('COLLECTOR') || r.includes('TEAM LEADER');
+    if (isOtherRole) return false;
+    const statusUpper = (e.status || 'ACTIVE').toUpperCase();
+    const isNameMissing = !e.name || e.name.trim() === '' || e.name.trim().toUpperCase() === 'N/A' || e.name.trim() === '-';
+    return statusUpper === 'ACTIVE' && !isNameMissing;
   });
 
-  // Update counter badges
+  // Section 3: 5. Inactive Booths must include both:
+  // 1. Sales Representative records with STATUS = INACTIVE
+  // 2. Booth records where the Sales Representative name is missing/blank
+  // If an inactive Sales Representative has a Booth Code, count that booth only once. Do not duplicate.
+  const seenBoothCodes = new Set();
+  const seenRecordIds = new Set();
+  const inactiveBooths = [];
+
+  // A. Candidate employee records
+  allStaff.forEach(emp => {
+    const r = (emp.role || '').toUpperCase();
+    const isOtherRole = r.includes('SUPERVISOR') || r.includes('TEAM LEADER') || r.includes('COLLECTOR') || r.includes('RELIEVER') || r.includes('RELIVER');
+    if (isOtherRole) return;
+
+    const statusUpper = (emp.status || '').toUpperCase();
+    const isInactive = statusUpper === 'INACTIVE' || statusUpper === 'TERMINATED';
+    const isNameMissing = !emp.name || emp.name.trim() === '' || emp.name.trim().toUpperCase() === 'N/A' || emp.name.trim() === '-';
+
+    if (isInactive || isNameMissing) {
+      const bCode = (emp.boothCode && emp.boothCode !== '-') ? emp.boothCode.trim().toUpperCase() : (emp.booth && emp.booth !== '-' ? emp.booth.trim().toUpperCase() : null);
+      if (bCode) {
+        if (!seenBoothCodes.has(bCode)) {
+          seenBoothCodes.add(bCode);
+          seenRecordIds.add(emp.id);
+          inactiveBooths.push(emp);
+        }
+      } else {
+        if (!seenRecordIds.has(emp.id)) {
+          seenRecordIds.add(emp.id);
+          inactiveBooths.push(emp);
+        }
+      }
+    }
+  });
+
+  // B. Candidate standalone booth records with missing sales rep or inactive status
+  const allBooths = (store.data && store.data.booths) ? store.data.booths : [];
+  allBooths.forEach(b => {
+    const bCode = (b.id || b.code || '').trim().toUpperCase();
+    if (!bCode || bCode === '-') return;
+    if (seenBoothCodes.has(bCode)) return;
+
+    const tellerName = b.assignedTellerName || b.activeTeller || '';
+    const isNameMissing = !tellerName || tellerName.trim() === '' || tellerName.trim().toUpperCase() === 'N/A' || tellerName.trim() === '-';
+    const isInactive = (b.status || '').toUpperCase() === 'INACTIVE';
+
+    let isAssignedTellerInactive = false;
+    if (b.assignedTellerId) {
+      const assignedEmp = allStaff.find(e => e.id === b.assignedTellerId);
+      if (assignedEmp && (assignedEmp.status || '').toUpperCase() === 'INACTIVE') {
+        isAssignedTellerInactive = true;
+      }
+    }
+
+    if (isNameMissing || isInactive || isAssignedTellerInactive) {
+      seenBoothCodes.add(bCode);
+      inactiveBooths.push({
+        id: b.assignedTellerId || `BOOTH-${bCode}`,
+        name: isNameMissing ? 'N/A' : tellerName,
+        role: isNameMissing ? 'N/A' : 'SALES REPRESENTATIVE',
+        department: 'dept-tel',
+        purok: b.purok || '-',
+        municipality: b.municipality || 'Sto. Tomas',
+        address: b.area || `${b.purok || '-'}, ${b.municipality || 'Sto. Tomas'}`,
+        area: b.area || b.municipality,
+        boothCode: bCode,
+        booth: bCode,
+        lat: b.lat,
+        lng: b.lng,
+        coordinates: (b.lat && b.lng) ? { lat: b.lat, lng: b.lng } : null,
+        phone: b.phone || 'N/A',
+        status: 'INACTIVE',
+        posSerial: b.posSerial || `POS-${bCode}`,
+        printerName: b.printerSerial ? 'WITH PORTABLE PRINTER' : 'N/A',
+        printerSerial: b.printerSerial || 'N/A'
+      });
+    }
+  });
+
+  // Update dynamic counter badges
   if (document.getElementById('count-all')) document.getElementById('count-all').textContent = allStaff.length;
   if (document.getElementById('count-supervisors')) document.getElementById('count-supervisors').textContent = supervisors.length;
   if (document.getElementById('count-collectors')) document.getElementById('count-collectors').textContent = collectors.length;
   if (document.getElementById('count-tellers')) document.getElementById('count-tellers').textContent = tellers.length;
   if (document.getElementById('count-relievers')) document.getElementById('count-relievers').textContent = relieversList.length;
+  if (document.getElementById('count-inactive-booths')) document.getElementById('count-inactive-booths').textContent = inactiveBooths.length;
 
   let list = customList;
   if (!list) {
@@ -894,6 +984,8 @@ function renderEmployeesTable(customList = null) {
       list = tellers;
     } else if (currentRegistryCategory === 'relievers') {
       list = relieversList;
+    } else if (currentRegistryCategory === 'inactive-booths') {
+      list = inactiveBooths;
     } else {
       list = allStaff;
     }
@@ -1143,6 +1235,8 @@ window.openAddEmployeeModal = function() {
   document.getElementById('emp-form-muni').value = 'Sto. Tomas';
   document.getElementById('emp-form-booth').value = '';
   document.getElementById('emp-form-phone').value = '';
+  const statusEl = document.getElementById('emp-form-status');
+  if (statusEl) statusEl.value = 'ACTIVE';
   document.getElementById('emp-form-pos').value = '';
   document.getElementById('emp-form-printer').value = 'WITH PORTABLE PRINTER';
   document.getElementById('emp-form-lat').value = '';
@@ -1163,12 +1257,13 @@ window.editEmployee = function(id) {
   document.getElementById('emp-form-id').value = emp.id;
   const idDisplay = document.getElementById('emp-form-id-display');
   if (idDisplay) idDisplay.value = emp.id;
-  document.getElementById('emp-form-name').value = emp.name;
+  document.getElementById('emp-form-name').value = (emp.name && emp.name !== 'N/A' && emp.name !== '-') ? emp.name : '';
   
   // Standardize Role dropdown selection
   const rUpper = (emp.role || 'SALES REPRESENTATIVE').toUpperCase();
   let normalizedRole = 'SALES REPRESENTATIVE';
-  if (rUpper.includes('SUPERVISOR')) normalizedRole = 'SUPERVISOR';
+  if (rUpper === 'N/A' || rUpper === 'BLANK' || rUpper === '-') normalizedRole = 'N/A';
+  else if (rUpper.includes('SUPERVISOR')) normalizedRole = 'SUPERVISOR';
   else if (rUpper.includes('COLLECTOR')) normalizedRole = 'COLLECTOR';
   else if (rUpper.includes('RELIEVER') || rUpper.includes('RELIVER')) normalizedRole = 'RELIEVER';
   else if (rUpper.includes('TEAM LEADER')) normalizedRole = 'TEAM LEADER';
@@ -1182,6 +1277,13 @@ window.editEmployee = function(id) {
   document.getElementById('emp-form-phone').value = (emp.phone && emp.phone !== '0917-000-0000' && emp.phone !== '-' && emp.phone !== 'N/A') ? emp.phone : '';
   document.getElementById('emp-form-pos').value = emp.posSerial || '';
   
+  // Status dropdown selection (ACTIVE / INACTIVE)
+  const statusUpper = (emp.status || 'ACTIVE').toUpperCase();
+  const statusEl = document.getElementById('emp-form-status');
+  if (statusEl) {
+    statusEl.value = (statusUpper === 'INACTIVE' || statusUpper === 'TERMINATED') ? 'INACTIVE' : 'ACTIVE';
+  }
+
   // Standardize Portable Printer dropdown selection
   const rawPr = (emp.printerName || emp.printerSerial || '').toUpperCase().trim();
   const isWithPr = rawPr.includes('WITH') || rawPr.includes('PRT-') || rawPr.includes('PRINTER') || rawPr.includes('PORTABLE');
@@ -1213,13 +1315,21 @@ window.saveEmployeeForm = function() {
   const customId = idDisplay ? idDisplay.value.trim() : '';
   const finalId = customId || origId || undefined;
 
-  const name = document.getElementById('emp-form-name').value.trim();
+  let name = document.getElementById('emp-form-name').value.trim();
+  const role = document.getElementById('emp-form-role').value;
+  const statusEl = document.getElementById('emp-form-status');
+  const selectedStatus = statusEl ? statusEl.value : 'ACTIVE';
+
+  // Allow blank/N/A name if status is INACTIVE or role is N/A
   if (!name) {
-    alert('Please enter staff name');
-    return;
+    if (selectedStatus === 'INACTIVE' || role === 'N/A') {
+      name = 'N/A';
+    } else {
+      alert('Please enter staff name');
+      return;
+    }
   }
 
-  const role = document.getElementById('emp-form-role').value;
   const purok = document.getElementById('emp-form-purok').value.trim() || '-';
   const muni = document.getElementById('emp-form-muni').value.trim() || '-';
   const fullAddress = purok !== '-' ? `${purok}, ${muni}` : muni;
@@ -1232,7 +1342,7 @@ window.saveEmployeeForm = function() {
   // Standardized Portable Printer
   const printerVal = document.getElementById('emp-form-printer').value === 'WITH PORTABLE PRINTER' ? 'WITH PORTABLE PRINTER' : 'N/A';
 
-  // Validate GPS Coordinates (Section 5 & 6)
+  // Validate GPS Coordinates
   const rawLat = document.getElementById('emp-form-lat').value.trim();
   const rawLng = document.getElementById('emp-form-lng').value.trim();
 
@@ -1265,16 +1375,6 @@ window.saveEmployeeForm = function() {
     return;
   }
 
-  // Get existing status if editing, or default to 'ACTIVE'
-  let status = 'ACTIVE';
-  if (origId) {
-    const existing = window.appStore.getEmployees().find(e => e.id === origId) ||
-                     (window.appStore.data.relievers && window.appStore.data.relievers.find(r => r.id === origId));
-    if (existing && existing.status) {
-      status = existing.status;
-    }
-  }
-
   const payload = {
     id: finalId,
     name: name,
@@ -1287,14 +1387,14 @@ window.saveEmployeeForm = function() {
     boothCode: boothCode,
     phone: phone,
     contact: phone,
-    status: status,
+    status: selectedStatus,
     posSerial: document.getElementById('emp-form-pos').value || (boothCode !== '-' ? `POS-${boothCode}` : 'POS-N9-GEN'),
     printerName: printerVal,
     printerSerial: printerVal,
     lat: finalLat,
     lng: finalLng,
     coordinates: (finalLat !== null && finalLng !== null) ? { lat: finalLat, lng: finalLng } : null,
-    etsStatus: (finalLat !== null && finalLng !== null) ? 'Active' : 'Unanchored'
+    etsStatus: (selectedStatus === 'ACTIVE' && finalLat !== null && finalLng !== null) ? 'Active' : 'Offline'
   };
 
   try {
@@ -1305,7 +1405,7 @@ window.saveEmployeeForm = function() {
       }
       savedRecord = window.appStore.updateEmployee(origId, payload);
       if (!savedRecord) {
-        alert(`Failed to update GPS Coordinates. Record "${origId}" could not be found.`);
+        alert(`Failed to update record. Staff member "${origId}" could not be found.`);
         return;
       }
     } else {
@@ -1322,10 +1422,10 @@ window.saveEmployeeForm = function() {
     if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
     if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
 
-    alert('GPS Coordinates updated successfully.');
+    alert(origId ? 'Staff member record updated successfully.' : 'Staff member registered successfully.');
   } catch (err) {
     console.error('Error saving employee record:', err);
-    alert(`Unable to save GPS Coordinates: ${err.message || err}`);
+    alert(`Unable to save record: ${err.message || err}`);
   }
 };
 

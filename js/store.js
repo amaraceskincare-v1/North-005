@@ -1686,6 +1686,7 @@ class Store {
   }
 
   updateEmployee(id, updates) {
+    let result = null;
     const idx = this.data.employees.findIndex(e => e.id === id);
     if (idx !== -1) {
       this.data.employees[idx] = { ...this.data.employees[idx], ...updates };
@@ -1710,12 +1711,19 @@ class Store {
         if (booth) {
           booth.lat = this.data.employees[idx].lat;
           booth.lng = this.data.employees[idx].lng;
+          if (updates.status) {
+            booth.status = updates.status;
+          }
+          if (updates.name) {
+            booth.assignedTellerName = updates.name;
+            booth.activeTeller = updates.name;
+          }
         }
       }
 
-      this.save();
-      return this.data.employees[idx];
+      result = this.data.employees[idx];
     }
+
     if (this.data.relievers) {
       const rIdx = this.data.relievers.findIndex(r => r.id === id);
       if (rIdx !== -1) {
@@ -1731,11 +1739,14 @@ class Store {
           this.data.relievers[rIdx].lng = nLng;
           this.data.relievers[rIdx].coordinates = { lat: nLat, lng: nLng };
         }
-        this.save();
-        return this.data.relievers[rIdx];
+        if (!result) result = this.data.relievers[rIdx];
       }
     }
-    return null;
+
+    if (result) {
+      this.save();
+    }
+    return result;
   }
 
   deleteEmployee(id) {
@@ -1789,20 +1800,24 @@ class Store {
       const phoneVal = (rawPh && rawPh !== '0917-000-0000' && rawPh !== '-' && rawPh !== 'N/A') ? rawPh : 'N/A';
 
       let statusVal = 'Active';
-      if (rec.hasMissingRequired || (rec.status && rec.status.toUpperCase() === 'INACTIVE')) {
+      if (finalName === 'N/A' || rec.hasMissingRequired || (rec.status && rec.status.toUpperCase() === 'INACTIVE')) {
         statusVal = 'Inactive';
       } else if (rec.status) {
         statusVal = rec.status.trim();
       }
       
-      // Standardize Role: Teller -> Sales Representative, Reliver -> Reliever, Team Leader
+      // Standardize Role: Teller -> Sales Representative, Reliver -> Reliever, Team Leader, missing -> N/A
       let roleVal = (rec.role && rec.role !== 'N/A') ? rec.role.trim() : 'Sales Representative';
-      const roleUpper = roleVal.toUpperCase();
-      if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') roleVal = 'Sales Representative';
-      else if (roleUpper.includes('RELIEVER') || roleUpper.includes('RELIVER')) roleVal = 'Reliever';
-      else if (roleUpper.includes('SUPERVISOR')) roleVal = 'Supervisor';
-      else if (roleUpper.includes('COLLECTOR')) roleVal = 'Collector';
-      else if (roleUpper.includes('TEAM LEADER')) roleVal = 'Team Leader';
+      if (finalName === 'N/A') {
+        roleVal = 'N/A';
+      } else {
+        const roleUpper = roleVal.toUpperCase();
+        if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') roleVal = 'Sales Representative';
+        else if (roleUpper.includes('RELIEVER') || roleUpper.includes('RELIVER')) roleVal = 'Reliever';
+        else if (roleUpper.includes('SUPERVISOR')) roleVal = 'Supervisor';
+        else if (roleUpper.includes('COLLECTOR')) roleVal = 'Collector';
+        else if (roleUpper.includes('TEAM LEADER')) roleVal = 'Team Leader';
+      }
 
       const emp = {
         id: newId,

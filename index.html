@@ -612,6 +612,10 @@
               onclick="window.filterRegistryCategory('relievers')">
               🔄 4. Relievers Registry (<span id="count-relievers">0</span>)
             </button>
+            <button class="btn btn-secondary btn-sm" id="tab-btn-inactive-booths"
+              onclick="window.filterRegistryCategory('inactive-booths')">
+              🏪 5. Inactive Booths (<span id="count-inactive-booths">0</span>)
+            </button>
           </div>
 
           <div class="card">
@@ -2318,6 +2322,7 @@
               <option value="SUPERVISOR">SUPERVISOR</option>
               <option value="RELIEVER">RELIEVER</option>
               <option value="TEAM LEADER">TEAM LEADER</option>
+              <option value="N/A">N/A</option>
             </select>
           </div>
           <div class="form-group">
@@ -2352,8 +2357,11 @@
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
-            <label class="form-label">POS Machine S/N</label>
-            <input type="text" id="emp-form-pos" class="form-input" placeholder="e.g. POS-DDN-352">
+            <label class="form-label">Status</label>
+            <select id="emp-form-status" class="form-select">
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="INACTIVE">INACTIVE</option>
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label">PORTABLE PRINTER NAME</label>
@@ -2361,6 +2369,16 @@
               <option value="WITH PORTABLE PRINTER">WITH PORTABLE PRINTER</option>
               <option value="N/A">N/A</option>
             </select>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">POS Machine S/N</label>
+            <input type="text" id="emp-form-pos" class="form-input" placeholder="e.g. POS-DDN-352">
+          </div>
+          <div class="form-group">
+            <label class="form-label">ID No.</label>
+            <input type="text" id="emp-form-id-display" class="form-input" placeholder="e.g. DDN005-SR352 (or new ID)">
           </div>
         </div>
         <div class="form-section-title"
@@ -2376,10 +2394,6 @@
             <label class="form-label">Longitude (-180 to 180)</label>
             <input type="text" id="emp-form-lng" class="form-input" placeholder="e.g. 125.626400 (or leave blank)">
           </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">ID No.</label>
-          <input type="text" id="emp-form-id-display" class="form-input" placeholder="e.g. DDN005-SR352 (or new ID)">
         </div>
       </div>
       <div class="modal-footer">

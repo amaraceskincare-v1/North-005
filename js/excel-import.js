@@ -620,7 +620,9 @@
 
     // 3. Role (Relievers sheet receives 'Reliever', others receive 'Sales Representative')
     let roleVal = sheetInfo.isRelieversSheet ? 'Reliever' : 'Sales Representative';
-    if (headerAnalysis.roleCol !== -1) {
+    if (!rawName) {
+      roleVal = 'N/A';
+    } else if (headerAnalysis.roleCol !== -1) {
       const explicitRole = getCell(headerAnalysis.roleCol);
       if (explicitRole) {
         const erUpper = explicitRole.toUpperCase();
