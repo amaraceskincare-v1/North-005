@@ -111,6 +111,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Render initial views
   renderAll();
 
+  // Initialize Universal Router and activate current route from URL
+  initRouter();
+
   // Subscribe to store updates
   window.appStore.subscribe(() => {
     renderAll();
@@ -169,19 +172,120 @@ function initTheme() {
   });
 }
 
-// 3. Navigation View Switching
+// 3. Navigation View Switching & Universal Router
+const ROUTE_MAP = {
+  '/dashboard': 'view-dashboard',
+  '/': 'view-dashboard',
+  '/master-registry': 'view-employees',
+  '/employees': 'view-employees',
+  '/live-tracking': 'view-tracking',
+  '/tracking': 'view-tracking',
+  '/ets': 'view-tracking',
+  '/sales-collection': 'view-pipelines',
+  '/pipelines': 'view-pipelines',
+  '/expenses': 'view-finance',
+  '/purchasing': 'view-finance',
+  '/finance': 'view-finance',
+  '/inventory': 'view-inventory',
+  '/reports': 'view-reports',
+  '/eod-reports': 'view-reports',
+  '/rest-days': 'view-restdays',
+  '/organization': 'view-organization',
+  '/teams': 'view-organization',
+  '/ocr': 'view-ocr'
+};
+
+const VIEW_TO_ROUTE = {
+  'view-dashboard': '/dashboard',
+  'view-employees': '/master-registry',
+  'view-tracking': '/live-tracking',
+  'view-pipelines': '/sales-collection',
+  'view-finance': '/expenses',
+  'view-inventory': '/inventory',
+  'view-reports': '/reports',
+  'view-restdays': '/rest-days',
+  'view-organization': '/organization',
+  'view-ocr': '/ocr'
+};
+
+function resolveCurrentRoute() {
+  let path = window.location.pathname.replace(/\/$/, '') || '/';
+
+  // Check URL hash if present (e.g. #/live-tracking or #live-tracking)
+  if (window.location.hash) {
+    const hashClean = window.location.hash.replace(/^#\/?/, '/');
+    if (ROUTE_MAP[hashClean]) return ROUTE_MAP[hashClean];
+  }
+
+  // Check search params fallback (?view=view-tracking or ?route=/live-tracking)
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('route') && ROUTE_MAP[params.get('route')]) {
+    return ROUTE_MAP[params.get('route')];
+  }
+  if (params.get('view') && VIEW_TO_ROUTE[params.get('view')]) {
+    return params.get('view');
+  }
+
+  if (ROUTE_MAP[path]) {
+    return ROUTE_MAP[path];
+  }
+
+  // If root '/', check if previously visited route exists in storage
+  if (path === '/' || path === '') {
+    try {
+      const stored = localStorage.getItem('NORTH005_CURRENT_ROUTE');
+      if (stored && ROUTE_MAP[stored]) return ROUTE_MAP[stored];
+    } catch (e) {}
+    return 'view-dashboard';
+  }
+
+  return 'view-dashboard';
+}
+
+function initRouter() {
+  // Handle browser Back / Forward buttons
+  window.addEventListener('popstate', (event) => {
+    let targetView = null;
+    if (event.state && event.state.viewId) {
+      targetView = event.state.viewId;
+    } else {
+      targetView = resolveCurrentRoute();
+    }
+    if (targetView) {
+      window.switchView(targetView, false);
+    }
+  });
+
+  // Handle hash changes
+  window.addEventListener('hashchange', () => {
+    const targetView = resolveCurrentRoute();
+    if (targetView) {
+      window.switchView(targetView, false);
+    }
+  });
+
+  // Resolve and activate initial route from current URL
+  const initialView = resolveCurrentRoute();
+  window.switchView(initialView, false);
+
+  const initialPath = VIEW_TO_ROUTE[initialView] || '/dashboard';
+  if (window.location.protocol.startsWith('http') && window.location.pathname !== initialPath) {
+    window.history.replaceState({ viewId: initialView }, '', initialPath);
+  }
+}
+
 function initNavigation() {
   const navItems = document.querySelectorAll('.sidebar-nav .nav-item');
   navItems.forEach(item => {
     item.addEventListener('click', () => {
       const viewId = item.getAttribute('data-view');
-      switchView(viewId);
+      switchView(viewId, true);
     });
   });
 }
 
-window.switchView = function(viewId) {
-  sfx.playClick();
+window.switchView = function(viewId, updateHistory = true) {
+  if (window.sfx) sfx.playClick();
   
   // Update sidebar active classes
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -207,6 +311,7 @@ window.switchView = function(viewId) {
     setTimeout(() => {
       window.etsMap.init('ets-map-container');
       renderFleetTrackingList();
+      if (window.etsMap.renderAllMarkers) window.etsMap.renderAllMarkers();
     }, 100);
   } else if (viewId === 'view-dashboard') {
     setTimeout(() => {
@@ -216,6 +321,19 @@ window.switchView = function(viewId) {
     setTimeout(() => {
       if (window.expensesPayment) window.expensesPayment.init();
     }, 50);
+  }
+
+  // Update URL route and browser history
+  const routePath = VIEW_TO_ROUTE[viewId] || '/dashboard';
+  try {
+    localStorage.setItem('NORTH005_CURRENT_ROUTE', routePath);
+  } catch (e) {}
+
+  if (updateHistory && window.location.protocol.startsWith('http')) {
+    const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
+    if (currentPath !== routePath) {
+      window.history.pushState({ viewId }, '', routePath);
+    }
   }
 };
 
@@ -1241,10 +1359,17 @@ function renderFleetTrackingList() {
   const relievers = store.data.relievers || [];
   const allStaff = [...employees, ...relievers.filter(r => !employees.some(e => e.id === r.id))];
 
-  let list = allStaff;
+  // Master Registry is the SOURCE OF TRUTH:
+  // Strictly filter only employees with valid GPS Coordinates (Lat -90 to 90, Lng -180 to 180)
+  // If invalid, blank, null, or missing -> DO NOT SHOW in Fleet Activity Monitor!
+  const gpsEligibleStaff = allStaff.filter(emp => window.hasValidGpsCoordinates(emp));
+
+  let list = gpsEligibleStaff;
   if (fleetSearchQuery) {
-    list = allStaff.filter(emp => {
-      const coordStr = `${emp.lat ? emp.lat.toFixed(6) : ''}, ${emp.lng ? emp.lng.toFixed(6) : ''}`;
+    list = gpsEligibleStaff.filter(emp => {
+      const lat = Number(emp.lat !== undefined && emp.lat !== null && emp.lat !== '' ? emp.lat : emp.coordinates.lat);
+      const lng = Number(emp.lng !== undefined && emp.lng !== null && emp.lng !== '' ? emp.lng : emp.coordinates.lng);
+      const coordStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
       return (emp.name && emp.name.toLowerCase().includes(fleetSearchQuery)) ||
              (emp.id && emp.id.toLowerCase().includes(fleetSearchQuery)) ||
              (emp.boothCode && emp.boothCode.toLowerCase().includes(fleetSearchQuery)) ||
@@ -1260,9 +1385,12 @@ function renderFleetTrackingList() {
   }
 
   if (list.length === 0) {
+    const emptyMsg = fleetSearchQuery 
+      ? `🔍 No GPS-enabled staff found matching "<strong>${fleetSearchQuery}</strong>"`
+      : `📍 No active staff with valid GPS coordinates in Master Registry.`;
     container.innerHTML = `
       <div style="text-align: center; padding: 24px 12px; color: var(--text-muted); font-size: 12px;">
-        🔍 No staff found matching "<strong>${fleetSearchQuery}</strong>"
+        ${emptyMsg}
       </div>
     `;
     return;
@@ -1276,8 +1404,9 @@ function renderFleetTrackingList() {
     else if (roleUpper.includes('TEAM LEADER')) statusBg = '#ccfbf1; color: #0f766e;';
     else if (roleUpper.includes('RELIEVER') || roleUpper.includes('RELIVER')) statusBg = '#e2e8f0; color: #334155;';
 
-    const latVal = emp.lat || 7.5303;
-    const lngVal = emp.lng || 125.6264;
+    // True Master Registry coordinates (never fake or fallback)
+    const latVal = Number(emp.lat !== undefined && emp.lat !== null && emp.lat !== '' ? emp.lat : emp.coordinates.lat);
+    const lngVal = Number(emp.lng !== undefined && emp.lng !== null && emp.lng !== '' ? emp.lng : emp.coordinates.lng);
     const latStr = latVal.toFixed(6);
     const lngStr = lngVal.toFixed(6);
 
@@ -1286,7 +1415,7 @@ function renderFleetTrackingList() {
     else if (roleUpper === 'RELIVER') displayRole = 'Reliever';
 
     return `
-      <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-surface); border: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s;" onclick="window.focusEmployeeCoords(${latVal}, ${lngVal}, '${emp.id}')">
+      <div style="padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-surface); border: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s;" onclick="window.focusEmployeeCoords(${latVal}, ${lngVal}, '${emp.id}')" title="Click to locate on STL BOOTH map">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">${emp.name}</div>
           <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: ${statusBg}">${displayRole}</span>
@@ -1295,12 +1424,8 @@ function renderFleetTrackingList() {
           Outlet: <code>${emp.boothCode || '-'}</code> • ${emp.municipality || emp.address || emp.area || '-'}
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-          <span style="font-size: 10.5px; font-family: monospace; color: var(--text-dim); font-weight: 600;">${latStr}, ${lngStr}</span>
-          <div style="display: flex; gap: 4px;">
-            <button class="btn btn-secondary btn-sm" style="padding: 3px 9px; font-size: 11px; font-weight: 700;" onclick="event.stopPropagation(); window.openPrecisionCalibrateModal('${emp.id}')" title="Edit Coordinates">
-              ✏️ Edit
-            </button>
-          </div>
+          <span style="font-size: 10.5px; font-family: monospace; color: var(--primary); font-weight: 700;">📍 ${latStr}, ${lngStr}</span>
+          <span style="font-size: 10px; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.12); padding: 1px 6px; border-radius: 3px;">GPS ACTIVE</span>
         </div>
       </div>
     `;

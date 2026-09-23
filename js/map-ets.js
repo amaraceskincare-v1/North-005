@@ -185,12 +185,14 @@ class EtsMapEngine {
     const isDraggable = this.calibrationMode;
 
     allStaff.forEach(emp => {
-      // Check if coordinates exist and are valid numbers
-      const validLat = emp.lat !== undefined && emp.lat !== null && emp.lat !== '' && !isNaN(emp.lat);
-      const validLng = emp.lng !== undefined && emp.lng !== null && emp.lng !== '' && !isNaN(emp.lng);
-      if (!validLat || !validLng) {
-        return; // Skip rendering marker if coordinates are cleared or unavailable
+      // Master Registry is the SOURCE OF TRUTH:
+      // Only plot marker if employee has valid GPS coordinates (lat -90..90, lng -180..180)
+      if (!window.hasValidGpsCoordinates(emp)) {
+        return; // Skip staff without valid GPS coordinates in Master Registry
       }
+
+      const lat = Number(emp.lat !== undefined && emp.lat !== null && emp.lat !== '' ? emp.lat : emp.coordinates.lat);
+      const lng = Number(emp.lng !== undefined && emp.lng !== null && emp.lng !== '' ? emp.lng : emp.coordinates.lng);
 
       // Determine Municipality for pin color coding
       let muni = emp.municipality || '';
@@ -229,7 +231,7 @@ class EtsMapEngine {
 
       const boothDisplay = emp.boothCode || emp.booth || '-';
       const icon = this.createSvgIcon(color, glyph, isDraggable, `STL BOOTH: ${boothDisplay} (${muni})`);
-      const marker = L.marker([emp.lat, emp.lng], { 
+      const marker = L.marker([lat, lng], { 
         icon,
         draggable: isDraggable
       });

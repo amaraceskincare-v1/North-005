@@ -192,7 +192,8 @@
               </div>
               <div class="stat-value" id="dash-total-employees">81 Active</div>
               <div class="stat-sub">
-                <span style="color: var(--primary); font-weight: 600;">Master Registry →</span> 78 Sales Reps • 3 Relievers
+                <span style="color: var(--primary); font-weight: 600;">Master Registry →</span> 78 Sales Reps • 3
+                Relievers
               </div>
             </div>
 
@@ -493,14 +494,17 @@
              VIEW 2: MASTER DATA - EMPLOYEE & BOOTH REGISTRY (DAVAO DEL NORTE)
              =================================================================== -->
         <section id="view-employees" class="view-panel">
-          <div class="view-header registry-header" style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: nowrap; margin-bottom: 22px;">
+          <div class="view-header registry-header"
+            style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: nowrap; margin-bottom: 22px;">
             <div class="view-title-group" style="flex: 0 1 auto; min-width: 280px;">
               <h2>System Master Data Registry: Davao Del Norte Sector (DDN005)</h2>
               <p style="margin: 0; font-size: 13px; color: var(--text-muted);">
-                Complete official registry of Collectors (5), OUTLETS / Sales Representatives (78), Relievers, Home Addresses, and Assigned Booth Codes
+                Complete official registry of Collectors (5), OUTLETS / Sales Representatives (78), Relievers, Home
+                Addresses, and Assigned Booth Codes
               </p>
             </div>
-            <div class="view-actions" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; flex-wrap: wrap;">
+            <div class="view-actions"
+              style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; flex-wrap: wrap;">
               <input type="text" id="employee-search-input" class="form-input"
                 placeholder="Search by name, ID, address, booth..." style="width: 220px;"
                 oninput="window.filterEmployees()">
@@ -605,7 +609,7 @@
         <section id="view-tracking" class="view-panel">
           <div class="view-header">
             <div class="view-title-group">
-              <h2>EST. LIVE TRACKING & STL BOOTH GPS Map</h2>
+              <h2>EST. LIVE TRACKING & STL BOOTH GPS MAP</h2>
               <p>Live GPS positioning, STL BOOTH location verification, and precision coordinate calibration across
                 Davao Del Norte</p>
             </div>
@@ -615,7 +619,8 @@
           <div id="ets-calibration-banner" style="display: none;">
             <div>
               <strong>🎯 STL BOOTH RECALIBRATION MODE ACTIVE:</strong>
-              <span style="font-weight: normal; margin-left: 6px;">You can now click and drag any STL BOOTH marker on the map to re-position its exact location. Release to confirm and save!</span>
+              <span style="font-weight: normal; margin-left: 6px;">You can now click and drag any STL BOOTH marker on
+                the map to re-position its exact location. Release to confirm and save!</span>
             </div>
             <button class="btn btn-secondary btn-sm" style="background: rgba(0,0,0,0.3); color: #fff; border: none;"
               onclick="window.etsMap.toggleCalibrationMode()">
@@ -624,15 +629,32 @@
           </div>
 
           <!-- STL BOOTH Municipality Color Legend (Section 7 & 8) -->
-          <div class="stl-booth-legend" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 14px; background: var(--bg-surface-elevated); border-radius: 6px; font-size: 11.5px; border: 1px solid var(--border-color);">
-            <strong style="color: var(--text-main); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">📍 STL BOOTH Pins:</strong>
-            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #10b981;"></span> Panabo City (GREEN)</span>
-            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #eab308;"></span> Sto. Tomas (YELLOW)</span>
-            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span> Carmen (RED)</span>
-            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #3b82f6;"></span> Kapalong (BLUE)</span>
-            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #8b5cf6;"></span> Tagum City (PURPLE)</span>
-            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ec4899;"></span> Talaingod (PINK)</span>
-            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #06b6d4;"></span> Samal (CYAN)</span>
+          <div class="stl-booth-legend"
+            style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 14px; background: var(--bg-surface-elevated); border-radius: 6px; font-size: 11.5px; border: 1px solid var(--border-color);">
+            <strong
+              style="color: var(--text-main); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">📍 STL
+              BOOTH Pins:</strong>
+            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span
+                style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #10b981;"></span>
+              Panabo City (GREEN)</span>
+            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span
+                style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #eab308;"></span>
+              Sto. Tomas (YELLOW)</span>
+            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span
+                style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+              Carmen (RED)</span>
+            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span
+                style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #3b82f6;"></span>
+              Kapalong (BLUE)</span>
+            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span
+                style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #8b5cf6;"></span>
+              Tagum City (PURPLE)</span>
+            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span
+                style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ec4899;"></span>
+              Talaingod (PINK)</span>
+            <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;"><span
+                style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #06b6d4;"></span>
+              Samal (CYAN)</span>
           </div>
 
           <!-- Map and Live Fleet Grid -->
@@ -1490,7 +1512,8 @@
             <div class="card-header">
               <div>
                 <div class="card-title">Davao Operational Manning & Rest Day Rotation Schedule</div>
-                <div class="card-subtitle">Ensuring adequate field collectors and booth sales representatives for every draw day</div>
+                <div class="card-subtitle">Ensuring adequate field collectors and booth sales representatives for every
+                  draw day</div>
               </div>
               <span class="badge badge-info">7-Day Rolling Coverage</span>
             </div>
@@ -2279,7 +2302,8 @@
             </select>
           </div>
         </div>
-        <div class="form-section-title" style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-top: 8px; margin-bottom: 2px;">
+        <div class="form-section-title"
+          style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-top: 8px; margin-bottom: 2px;">
           GPS Coordinates
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">

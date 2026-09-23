@@ -1619,6 +1619,32 @@ class Store {
     this.save();
   }
 
+  // Method to check if an employee has valid GPS coordinates (Latitude -90 to 90, Longitude -180 to 180)
+  hasValidGpsCoordinates(emp) {
+    if (!emp) return false;
+    let lat = emp.lat;
+    let lng = emp.lng;
+
+    if ((lat === undefined || lat === null || lat === '' || isNaN(lat)) && emp.coordinates) {
+      lat = emp.coordinates.lat;
+    }
+    if ((lng === undefined || lng === null || lng === '' || isNaN(lng)) && emp.coordinates) {
+      lng = emp.coordinates.lng;
+    }
+
+    if (lat === undefined || lat === null || lat === '' || isNaN(lat)) return false;
+    if (lng === undefined || lng === null || lng === '' || isNaN(lng)) return false;
+
+    const numLat = Number(lat);
+    const numLng = Number(lng);
+
+    if (isNaN(numLat) || isNaN(numLng)) return false;
+    if (numLat < -90 || numLat > 90) return false;
+    if (numLng < -180 || numLng > 180) return false;
+
+    return true;
+  }
+
   // Pin Recalibration Method: Update coordinates of any employee or booth
   updateCoordinates(id, lat, lng) {
     let updated = false;
@@ -2309,3 +2335,7 @@ class Store {
 }
 
 window.appStore = new Store();
+window.hasValidGpsCoordinates = function(emp) {
+  return window.appStore.hasValidGpsCoordinates(emp);
+};
+
