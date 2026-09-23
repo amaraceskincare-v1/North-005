@@ -812,12 +812,33 @@ window.goToRegistryPage = function(page) {
 };
 
 window.updateEmployeeStatus = function(id, newStatus) {
-  sfx.playClick();
+  if (window.sfx) sfx.playClick();
   const normStatus = (newStatus || 'ACTIVE').toUpperCase();
   window.appStore.updateEmployee(id, { status: normStatus });
   renderEmployeesTable();
   if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
   if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
+};
+
+window.updateEmployeePrinter = function(id, newPrinter) {
+  if (window.sfx) sfx.playClick();
+  const val = newPrinter === 'WITH PORTABLE PRINTER' ? 'WITH PORTABLE PRINTER' : 'N/A';
+  window.appStore.updateEmployee(id, { printerName: val, printerSerial: val });
+  renderEmployeesTable();
+  if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
+};
+
+window.handleRoleChangeInModal = function(role) {
+  const rUpper = (role || '').toUpperCase();
+  const deptSelect = document.getElementById('emp-form-dept');
+  if (!deptSelect) return;
+  if (rUpper.includes('COLLECTOR')) {
+    deptSelect.value = 'dept-col';
+  } else if (rUpper.includes('SUPERVISOR') || rUpper.includes('TEAM LEADER')) {
+    deptSelect.value = 'dept-sup';
+  } else if (rUpper.includes('TELLER') || rUpper.includes('SALES REPRESENTATIVE')) {
+    deptSelect.value = 'dept-tel';
+  }
 };
 
 let pendingDeleteEmployeeId = null;
@@ -1250,9 +1271,37 @@ window.openAddEmployeeModal = function() {
 window.editEmployee = function(id) {
   if (window.sfx) sfx.playClick();
   const store = window.appStore;
-  const emp = store.getEmployees().find(e => e.id === id) || 
-              (store.data.relievers && store.data.relievers.find(r => r.id === id));
-  if (!emp) return;
+  let emp = store.getEmployees().find(e => e.id === id) || 
+            (store.data.relievers && store.data.relievers.find(r => r.id === id));
+
+  // If not found in employees or relievers, check booths (e.g. Inactive Booths or booth-keyed items)
+  if (!emp && store.data.booths) {
+    const cleanBoothCode = id.replace(/^BOOTH-/, '');
+    const b = store.data.booths.find(b => b.id === id || b.id === cleanBoothCode || b.assignedTellerId === id);
+    if (b) {
+      emp = {
+        id: b.assignedTellerId || `BOOTH-${b.id}`,
+        name: b.assignedTellerName || b.activeTeller || '',
+        role: 'SALES REPRESENTATIVE',
+        department: 'dept-tel',
+        purok: b.purok || '',
+        municipality: b.municipality || 'Sto. Tomas',
+        address: b.area || `${b.purok || ''}, ${b.municipality || 'Sto. Tomas'}`,
+        boothCode: b.id,
+        phone: b.phone || '',
+        status: b.status || 'INACTIVE',
+        posSerial: b.posSerial || `POS-${b.id}`,
+        printerSerial: b.printerSerial || 'N/A',
+        lat: b.lat,
+        lng: b.lng
+      };
+    }
+  }
+
+  if (!emp) {
+    alert(`Staff record with ID "${id}" could not be found.`);
+    return;
+  }
 
   const parsed = parseAddressHelper(emp.address || emp.area || '');
 
@@ -1260,7 +1309,7 @@ window.editEmployee = function(id) {
   document.getElementById('emp-form-id').value = emp.id;
   const idDisplay = document.getElementById('emp-form-id-display');
   if (idDisplay) idDisplay.value = emp.id;
-  document.getElementById('emp-form-name').value = (emp.name && emp.name !== 'N/A' && emp.name !== '-') ? emp.name : '';
+  document.getElementById('emp-form-name').value = (emp.name && emp.name !== 'N/A' && emp.name !== '-') ? emp.name : (emp.name === 'N/A' ? 'N/A' : '');
   
   // Standardize Role dropdown selection
   const rUpper = (emp.role || 'SALES REPRESENTATIVE').toUpperCase();
@@ -1273,12 +1322,38 @@ window.editEmployee = function(id) {
   else normalizedRole = 'SALES REPRESENTATIVE';
   document.getElementById('emp-form-role').value = normalizedRole;
 
-  document.getElementById('emp-form-dept').value = emp.department || 'dept-tel';
-  document.getElementById('emp-form-purok').value = emp.purok && emp.purok !== '-' ? emp.purok : parsed.purok;
-  document.getElementById('emp-form-muni').value = emp.municipality && emp.municipality !== '-' ? emp.municipality : parsed.municipality;
-  document.getElementById('emp-form-booth').value = emp.boothCode && emp.boothCode !== '-' ? emp.boothCode : '';
-  document.getElementById('emp-form-phone').value = (emp.phone && emp.phone !== '0917-000-0000' && emp.phone !== '-' && emp.phone !== 'N/A') ? emp.phone : '';
-  document.getElementById('emp-form-pos').value = emp.posSerial || '';
+  // Department normalization
+  const dVal = (emp.department || '').toLowerCase();
+  const deptEl = document.getElementById('emp-form-dept');
+  if (deptEl) {
+    if (dVal === 'dept-col' || dVal.includes('collector')) deptEl.value = 'dept-col';
+    else if (dVal === 'dept-sup' || dVal.includes('supervisor')) deptEl.value = 'dept-sup';
+    else if (dVal === 'dept-exec' || dVal.includes('executive')) deptEl.value = 'dept-exec';
+    else if (dVal === 'dept-aud' || dVal.includes('audit')) deptEl.value = 'dept-aud';
+    else if (dVal === 'dept-log' || dVal.includes('logistic')) deptEl.value = 'dept-log';
+    else deptEl.value = 'dept-tel';
+  }
+
+  // Purok / Street / Barangay
+  let rawPurok = emp.purok && emp.purok !== '-' ? emp.purok : parsed.purok;
+  if (rawPurok === '-') rawPurok = '';
+  document.getElementById('emp-form-purok').value = rawPurok || '';
+
+  // Municipality
+  let rawMuni = emp.municipality && emp.municipality !== '-' ? emp.municipality : parsed.municipality;
+  if (rawMuni === '-') rawMuni = '';
+  document.getElementById('emp-form-muni').value = rawMuni || '';
+
+  // Assigned Booth Code
+  const boothVal = (emp.boothCode && emp.boothCode !== '-') ? emp.boothCode : (emp.booth && emp.booth !== '-' ? emp.booth : '');
+  document.getElementById('emp-form-booth').value = boothVal || '';
+
+  // Contact Phone
+  const phoneVal = (emp.phone && emp.phone !== '0917-000-0000' && emp.phone !== '-' && emp.phone !== 'N/A') ? emp.phone : (emp.contact && emp.contact !== '-' && emp.contact !== 'N/A' ? emp.contact : '');
+  document.getElementById('emp-form-phone').value = phoneVal || '';
+
+  // POS Machine S/N
+  document.getElementById('emp-form-pos').value = (emp.posSerial && emp.posSerial !== '-') ? emp.posSerial : (emp.pos && emp.pos !== '-' ? emp.pos : '');
   
   // Status dropdown selection (ACTIVE / INACTIVE / TERMINATED)
   const statusUpper = (emp.status || 'ACTIVE').toUpperCase();
@@ -1394,6 +1469,7 @@ window.saveEmployeeForm = function() {
     purok: purok,
     municipality: muni,
     boothCode: boothCode,
+    booth: boothCode,
     phone: phone,
     contact: phone,
     status: selectedStatus,

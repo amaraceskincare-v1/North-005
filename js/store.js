@@ -1814,9 +1814,58 @@ class Store {
       updates.status = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
     }
 
-    const idx = this.data.employees.findIndex(e => e.id === id);
+    const targetId = (updates.id && updates.id.trim()) ? updates.id.trim() : id;
+
+    let idx = this.data.employees ? this.data.employees.findIndex(e => e.id === id) : -1;
+    let rIdx = this.data.relievers ? this.data.relievers.findIndex(r => r.id === id) : -1;
+
+    // If record is not in employees or relievers, check booths (e.g. Inactive Booth row)
+    if (idx === -1 && rIdx === -1 && this.data.booths) {
+      const cleanBoothCode = id.replace(/^BOOTH-/, '');
+      const boothIdx = this.data.booths.findIndex(b => b.id === id || b.id === cleanBoothCode || b.assignedTellerId === id);
+      if (boothIdx !== -1) {
+        const b = this.data.booths[boothIdx];
+        const newEmp = {
+          id: targetId || (b.assignedTellerId && !b.assignedTellerId.startsWith('BOOTH-') ? b.assignedTellerId : `DDN005-SR${cleanBoothCode.replace(/[^0-9]/g, '').padStart(3, '0')}`),
+          name: updates.name || b.assignedTellerName || 'N/A',
+          role: updates.role || 'SALES REPRESENTATIVE',
+          department: updates.department || 'dept-tel',
+          purok: updates.purok || b.purok || '-',
+          municipality: updates.municipality || b.municipality || 'Sto. Tomas',
+          address: updates.address || `${updates.purok || b.purok || '-'}, ${updates.municipality || b.municipality || 'Sto. Tomas'}`,
+          area: updates.area || updates.municipality || b.municipality || 'Sto. Tomas',
+          boothCode: cleanBoothCode,
+          booth: cleanBoothCode,
+          phone: updates.phone || 'N/A',
+          contact: updates.contact || updates.phone || 'N/A',
+          status: updates.status || 'INACTIVE',
+          posSerial: updates.posSerial || b.posSerial || `POS-${cleanBoothCode}`,
+          printerName: updates.printerName || (b.printerSerial ? 'WITH PORTABLE PRINTER' : 'N/A'),
+          printerSerial: updates.printerSerial || 'N/A',
+          lat: updates.lat !== undefined ? updates.lat : b.lat,
+          lng: updates.lng !== undefined ? updates.lng : b.lng,
+          coordinates: (updates.lat && updates.lng) ? { lat: updates.lat, lng: updates.lng } : ((b.lat && b.lng) ? { lat: b.lat, lng: b.lng } : null)
+        };
+        this.data.employees.unshift(newEmp);
+        b.assignedTellerId = newEmp.id;
+        b.assignedTellerName = newEmp.name;
+        b.activeTeller = newEmp.name;
+        b.status = newEmp.status;
+        b.purok = newEmp.purok;
+        b.municipality = newEmp.municipality;
+        b.area = newEmp.address;
+        if (newEmp.lat) b.lat = newEmp.lat;
+        if (newEmp.lng) b.lng = newEmp.lng;
+        this.save();
+        return newEmp;
+      }
+    }
+
+    // Capture old booth code before applying updates
+    let oldBoothCode = null;
     if (idx !== -1) {
-      this.data.employees[idx] = { ...this.data.employees[idx], ...updates };
+      oldBoothCode = this.data.employees[idx].boothCode || this.data.employees[idx].booth || null;
+      this.data.employees[idx] = { ...this.data.employees[idx], ...updates, id: targetId };
 
       // Explicitly handle GPS coordinates & coordinates object persistence
       if (updates.lat === null || updates.lng === null || updates.lat === '' || updates.lng === '') {
@@ -1831,30 +1880,15 @@ class Store {
         this.data.employees[idx].coordinates = { lat: nLat, lng: nLng };
       }
 
-      // Sync booth if outlet booth
-      const boothCode = this.data.employees[idx].boothCode;
-      if (boothCode && boothCode !== '-') {
-        const booth = this.data.booths.find(b => b.id === boothCode || b.assignedTellerId === id);
-        if (booth) {
-          booth.lat = this.data.employees[idx].lat;
-          booth.lng = this.data.employees[idx].lng;
-          if (updates.status) {
-            booth.status = updates.status;
-          }
-          if (updates.name) {
-            booth.assignedTellerName = updates.name;
-            booth.activeTeller = updates.name;
-          }
-        }
-      }
-
       result = this.data.employees[idx];
     }
 
     if (this.data.relievers) {
-      const rIdx = this.data.relievers.findIndex(r => r.id === id || (result && r.name && r.name.toLowerCase() === result.name.toLowerCase()));
+      if (rIdx === -1 && result) {
+        rIdx = this.data.relievers.findIndex(r => (result.id && r.id === result.id) || (result.name && r.name && r.name.toLowerCase() === result.name.toLowerCase()));
+      }
       if (rIdx !== -1) {
-        this.data.relievers[rIdx] = { ...this.data.relievers[rIdx], ...updates };
+        this.data.relievers[rIdx] = { ...this.data.relievers[rIdx], ...updates, id: targetId };
         if (updates.lat === null || updates.lng === null || updates.lat === '' || updates.lng === '') {
           this.data.relievers[rIdx].lat = null;
           this.data.relievers[rIdx].lng = null;
@@ -1867,6 +1901,61 @@ class Store {
           this.data.relievers[rIdx].coordinates = { lat: nLat, lng: nLng };
         }
         if (!result) result = this.data.relievers[rIdx];
+      }
+    }
+
+    // Role cross-synchronization
+    if (result && updates.role) {
+      const isRelRole = updates.role.toUpperCase().includes('RELIEVER');
+      if (isRelRole && this.data.relievers && !this.data.relievers.some(r => r.id === result.id)) {
+        this.data.relievers.push({ ...result });
+      }
+      if (!isRelRole && idx === -1 && this.data.employees) {
+        this.data.employees.unshift({ ...result });
+      }
+    }
+
+    // Synchronize booth assignments
+    if (this.data.booths) {
+      const newBoothCode = updates.boothCode || (result ? (result.boothCode || result.booth) : null);
+      // If booth changed, unassign from old booth
+      if (oldBoothCode && oldBoothCode !== '-' && newBoothCode && oldBoothCode !== newBoothCode) {
+        const oldB = this.data.booths.find(b => b.id === oldBoothCode && b.assignedTellerId === id);
+        if (oldB) {
+          oldB.assignedTellerId = null;
+          oldB.assignedTellerName = '';
+          oldB.activeTeller = '';
+        }
+      }
+
+      if (newBoothCode && newBoothCode !== '-') {
+        let b = this.data.booths.find(b => b.id === newBoothCode || b.assignedTellerId === id || b.assignedTellerId === targetId);
+        if (!b) {
+          b = {
+            id: newBoothCode,
+            name: `Station ${newBoothCode}`,
+            area: (result && result.address) || `${(result && result.purok) || '-'}, ${(result && result.municipality) || 'Sto. Tomas'}`,
+            purok: (result && result.purok) || '-',
+            municipality: (result && result.municipality) || 'Sto. Tomas',
+            lat: result ? result.lat : null,
+            lng: result ? result.lng : null,
+            status: (result && result.status) || 'Active',
+            posSerial: (result && result.posSerial) || `POS-${newBoothCode}`,
+            printerSerial: (result && result.printerSerial) || 'N/A'
+          };
+          this.data.booths.push(b);
+        }
+        b.assignedTellerId = targetId;
+        if (result && result.name) {
+          b.assignedTellerName = result.name;
+          b.activeTeller = result.name;
+        }
+        if (result && result.status) b.status = result.status;
+        if (result && result.purok && result.purok !== '-') b.purok = result.purok;
+        if (result && result.municipality && result.municipality !== '-') b.municipality = result.municipality;
+        if (result && result.address) b.area = result.address;
+        if (result && result.lat !== undefined && result.lat !== null) b.lat = result.lat;
+        if (result && result.lng !== undefined && result.lng !== null) b.lng = result.lng;
       }
     }
 

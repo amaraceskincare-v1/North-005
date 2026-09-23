@@ -88,18 +88,32 @@
     }) || null;
   }
 
-  // 1. Trigger File Selection
+  // 1. Trigger File Selection / Open Upload Dialog
   window.triggerExcelUpload = function () {
-    const input = document.getElementById('excel-file-input');
-    if (input) {
-      input.value = '';
-      input.click();
+    const dialog = document.getElementById('modal-excel-upload-dialog');
+    if (dialog) {
+      dialog.classList.add('active');
+    } else {
+      const input = document.getElementById('excel-file-input');
+      if (input) {
+        input.value = '';
+        input.click();
+      }
     }
   };
 
-  // 2. Handle File Selection
-  window.handleExcelFileSelected = function (event) {
-    const file = event.target.files && event.target.files[0];
+  window.openExcelUploadDialog = function () {
+    const dialog = document.getElementById('modal-excel-upload-dialog');
+    if (dialog) dialog.classList.add('active');
+  };
+
+  window.closeExcelUploadDialog = function () {
+    const dialog = document.getElementById('modal-excel-upload-dialog');
+    if (dialog) dialog.classList.remove('active');
+  };
+
+  // 2. Handle File Selection & Drag-and-Drop Processing
+  window.processUploadedExcelFile = function (file) {
     if (!file) return;
 
     const fileName = file.name || '';
@@ -108,9 +122,10 @@
     // Validate Extension: must be .xlsx or .xls
     if (ext !== 'xlsx' && ext !== 'xls') {
       window.showUnsupportedFileModal();
-      event.target.value = '';
       return;
     }
+
+    window.closeExcelUploadDialog();
 
     // Read File using SheetJS (XLSX)
     const reader = new FileReader();
@@ -136,6 +151,13 @@
       }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  window.handleExcelFileSelected = function (event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    window.processUploadedExcelFile(file);
+    event.target.value = '';
   };
 
   // Display Unsupported File Modal
@@ -460,6 +482,9 @@
     let boothCol = -1;
     let posCol = -1;
     let coordsCol = -1;
+    let muniCol = -1;
+    let printerCol = -1;
+    let roleCol = -1;
     const idCols = [];
 
     headerRow.forEach((cell, idx) => {
@@ -530,18 +555,6 @@
       if (txt === 'role' || txt.includes('designation') || txt.includes('position')) {
         roleCol = idx;
       }
-    });
-
-    let muniCol = -1;
-    let printerCol = -1;
-    let roleCol = -1;
-
-    headerRow.forEach((cell, idx) => {
-      const txt = cleanStr(cell).toLowerCase();
-      if (!txt) return;
-      if (txt.includes('municipality') || txt.includes('city') || txt.includes('town')) muniCol = idx;
-      if (txt.includes('printer')) printerCol = idx;
-      if (txt === 'role' || txt.includes('designation') || txt.includes('position')) roleCol = idx;
     });
 
     // Fallback: If srCol not found, look for "Full Name", "Employee Name", "Reliever", "Staff", "Personnel"
@@ -1306,5 +1319,43 @@
 
     XLSX.writeFile(workbook, "NORTH005_Master_Registry_7Sheets.xlsx");
   };
+
+  // Initialize dropzone events
+  function initDropzone() {
+    const dropzone = document.getElementById('excel-drop-zone');
+    if (!dropzone) return;
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.borderColor = 'var(--primary)';
+        dropzone.style.background = 'rgba(59, 130, 246, 0.12)';
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+        dropzone.style.background = 'rgba(15, 23, 42, 0.6)';
+      }, false);
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt && dt.files;
+      if (files && files.length > 0) {
+        window.processUploadedExcelFile(files[0]);
+      }
+    }, false);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDropzone);
+  } else {
+    setTimeout(initDropzone, 100);
+  }
 
 })();
