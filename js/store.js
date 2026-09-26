@@ -24,6 +24,15 @@ function parseAddress(rawAddress) {
   }
   const addr = rawAddress.trim();
   
+  // If the address contains multi-municipality route slashes (e.g. "Tagum / Kapalong / Talaingod" or "Carmen / Tagum")
+  // and has no comma, this is an assigned coverage territory/route without a purok!
+  if (addr.includes('/') && !addr.includes(',')) {
+    return {
+      purok: '-',
+      municipality: addr
+    };
+  }
+
   const knownMunicipalities = [
     'Sto. Tomas',
     'Sto Tomas',
@@ -47,7 +56,7 @@ function parseAddress(rawAddress) {
     const re = new RegExp('(?:,\\s*|\\s+)' + m.replace('.', '\\.') + '\\s*$', 'i');
     if (re.test(addr)) {
       const match = addr.match(re);
-      const purokPart = addr.substring(0, match.index).trim().replace(/,\s*$/, '');
+      const purokPart = addr.substring(0, match.index).trim().replace(/[,\/\s]+$/, '');
       return {
         purok: purokPart || '-',
         municipality: m
@@ -58,8 +67,9 @@ function parseAddress(rawAddress) {
   const parts = addr.split(',').map(s => s.trim()).filter(Boolean);
   if (parts.length > 1) {
     const muni = parts.pop();
+    const pPart = parts.join(', ').replace(/[,\/\s]+$/, '').trim();
     return {
-      purok: parts.join(', ') || '-',
+      purok: pPart || '-',
       municipality: muni
     };
   } else if (parts.length === 1) {
@@ -221,7 +231,6 @@ function buildDefaultStore() {
 
   // Add Collectors (Booth Code is - per requirement; they have Area Assignment)
   RAW_COLLECTORS.forEach(c => {
-    const colAddr = parseAddress(c.area);
     employees.push({
       id: c.id,
       name: c.name,
@@ -1235,6 +1244,18 @@ class Store {
               // Phone
               if (!e.phone && e.contact) e.phone = e.contact;
               if (!e.contact && e.phone) e.contact = e.phone;
+
+              // Clean up corrupted / dangling slash puroks (e.g. "Tagum / Kapalong /" or "Carmen /")
+              if (e.purok === 'Tagum / Kapalong /' || e.purok === 'Carmen /' || (typeof e.purok === 'string' && e.purok.trim().endsWith('/'))) {
+                e.purok = '-';
+                if ((e.role || '').toUpperCase().includes('COLLECTOR')) {
+                  if (e.id === 'DDN005-SC002') e.municipality = 'Tagum / Kapalong / Talaingod';
+                  else if (e.id === 'DDN005-SC003') e.municipality = 'Carmen / Tagum';
+                  else if (e.area) e.municipality = e.area;
+                  e.address = e.municipality;
+                }
+                needsSave = true;
+              }
             });
           }
 
@@ -1310,6 +1331,217 @@ class Store {
             parsed.transactions = fresh.transactions;
             needsSave = true;
           }
+
+          // Ensure Jenyva H. Tura and Collector John obligations are initialized for Employee Accountability
+          const hasJenyva = parsed.transactions && parsed.transactions.some(t => (t.name || '').toUpperCase().includes('JENYVA'));
+          if (!hasJenyva) {
+            const accountabilitySeedTxns = [
+              {
+                id: 'TXN-2026-0924-JENYVA-01',
+                date: '2026-09-24',
+                amount: 1140.00,
+                description: 'SHORT TELLER - JENYVA H. TURA',
+                name: 'JENYVA H. TURA',
+                employeeId: 'DDN005-SR1140',
+                role: 'Teller',
+                boothCode: 'DDN-1140',
+                location: 'Davao Del Norte',
+                datePeriodCover: '2026-09-24',
+                note: 'Initial cash shortage detected from daily ledger',
+                classification: 'SHORT',
+                transactionType: 'SHORT_TELLER',
+                applyToCA: false,
+                appliedTo: 'Shortage',
+                verificationStatus: 'VERIFIED',
+                ocrDocId: 'DOC-YPAD-20260924'
+              },
+              {
+                id: 'TXN-2026-0925-JENYVA-02',
+                date: '2026-09-25',
+                amount: 200.00,
+                description: 'PAYMENT - SHORT - JENYVA H. TURA',
+                name: 'JENYVA H. TURA',
+                employeeId: 'DDN005-SR1140',
+                role: 'Teller',
+                boothCode: 'DDN-1140',
+                location: 'Davao Del Norte',
+                datePeriodCover: '2026-09-25',
+                note: 'Partial shortage settlement payment',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: false,
+                appliedTo: 'Short Teller',
+                verificationStatus: 'VERIFIED'
+              },
+              {
+                id: 'TXN-2026-0926-JENYVA-03',
+                date: '2026-09-26',
+                amount: 200.00,
+                description: 'PAYMENT - SHORT - JENYVA H. TURA',
+                name: 'JENYVA H. TURA',
+                employeeId: 'DDN005-SR1140',
+                role: 'Teller',
+                boothCode: 'DDN-1140',
+                location: 'Davao Del Norte',
+                datePeriodCover: '2026-09-26',
+                note: 'Partial shortage settlement payment',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: false,
+                appliedTo: 'Short Teller',
+                verificationStatus: 'VERIFIED'
+              },
+              {
+                id: 'TXN-2026-0927-JENYVA-04',
+                date: '2026-09-27',
+                amount: 300.00,
+                description: 'PAYMENT - SHORT - JENYVA H. TURA',
+                name: 'JENYVA H. TURA',
+                employeeId: 'DDN005-SR1140',
+                role: 'Teller',
+                boothCode: 'DDN-1140',
+                location: 'Davao Del Norte',
+                datePeriodCover: '2026-09-27',
+                note: 'Partial shortage settlement payment',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: false,
+                appliedTo: 'Short Teller',
+                verificationStatus: 'VERIFIED'
+              },
+              {
+                id: 'TXN-2026-0928-JENYVA-05',
+                date: '2026-09-28',
+                amount: 440.00,
+                description: 'PAYMENT - SHORT - JENYVA H. TURA',
+                name: 'JENYVA H. TURA',
+                employeeId: 'DDN005-SR1140',
+                role: 'Teller',
+                boothCode: 'DDN-1140',
+                location: 'Davao Del Norte',
+                datePeriodCover: '2026-09-28',
+                note: 'Final settlement payment - Fully Settled',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: false,
+                appliedTo: 'Short Teller',
+                verificationStatus: 'VERIFIED'
+              },
+              // Collector John Cash Advance (₱2,000 CA, Sep 25 ₱500, Sep 26 ₱500, Sep 27 ₱1,000)
+              {
+                id: 'TXN-2026-0924-JOHN-CA-01',
+                date: '2026-09-24',
+                amount: 2000.00,
+                description: 'C.A. - COLL. JOHN',
+                name: 'JOHN',
+                employeeId: 'DDN005-SC001',
+                role: 'Collector',
+                boothCode: '',
+                location: 'Field Route',
+                datePeriodCover: '2026-09-24',
+                note: 'Collector Cash Advance approved by Sir Jundy',
+                classification: 'CA',
+                transactionType: 'CASH_ADVANCE',
+                applyToCA: false,
+                appliedTo: 'C.A.',
+                verificationStatus: 'VERIFIED',
+                ocrDocId: 'DOC-YPAD-20260924'
+              },
+              {
+                id: 'TXN-2026-0925-JOHN-CA-02',
+                date: '2026-09-25',
+                amount: 500.00,
+                description: 'PAYMENT - C.A. - COLL. JOHN',
+                name: 'JOHN',
+                employeeId: 'DDN005-SC001',
+                role: 'Collector',
+                boothCode: '',
+                location: 'Field Route',
+                datePeriodCover: '2026-09-25',
+                note: 'Partial C.A. deduction payment',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: true,
+                appliedTo: 'C.A.',
+                verificationStatus: 'VERIFIED'
+              },
+              {
+                id: 'TXN-2026-0926-JOHN-CA-03',
+                date: '2026-09-26',
+                amount: 500.00,
+                description: 'PAYMENT - C.A. - COLL. JOHN',
+                name: 'JOHN',
+                employeeId: 'DDN005-SC001',
+                role: 'Collector',
+                boothCode: '',
+                location: 'Field Route',
+                datePeriodCover: '2026-09-26',
+                note: 'Partial C.A. deduction payment',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: true,
+                appliedTo: 'C.A.',
+                verificationStatus: 'VERIFIED'
+              },
+              {
+                id: 'TXN-2026-0927-JOHN-CA-04',
+                date: '2026-09-27',
+                amount: 1000.00,
+                description: 'PAYMENT - C.A. - COLL. JOHN',
+                name: 'JOHN',
+                employeeId: 'DDN005-SC001',
+                role: 'Collector',
+                boothCode: '',
+                location: 'Field Route',
+                datePeriodCover: '2026-09-27',
+                note: 'Final C.A. settlement payment - Fully Settled',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: true,
+                appliedTo: 'C.A.',
+                verificationStatus: 'VERIFIED'
+              },
+              // Collector John Separate Short Teller (Original ₱300, Paid ₱100, Outstanding ₱200) - Requirement #16
+              {
+                id: 'TXN-2026-0924-JOHN-SH-01',
+                date: '2026-09-24',
+                amount: 300.00,
+                description: 'SHORT TELLER - COLL. JOHN',
+                name: 'JOHN',
+                employeeId: 'DDN005-SC001',
+                role: 'Collector',
+                boothCode: '',
+                location: 'Field Route',
+                datePeriodCover: '2026-09-24',
+                note: 'Shortage incurred on collection route',
+                classification: 'SHORT',
+                transactionType: 'SHORT_TELLER',
+                applyToCA: false,
+                appliedTo: 'Shortage',
+                verificationStatus: 'VERIFIED'
+              },
+              {
+                id: 'TXN-2026-0925-JOHN-SH-02',
+                date: '2026-09-25',
+                amount: 100.00,
+                description: 'PAYMENT - SHORT - COLL. JOHN',
+                name: 'JOHN',
+                employeeId: 'DDN005-SC001',
+                role: 'Collector',
+                boothCode: '',
+                location: 'Field Route',
+                datePeriodCover: '2026-09-25',
+                note: 'Shortage deduction payment',
+                classification: 'PAYMENT',
+                transactionType: 'PAYMENT',
+                applyToCA: false,
+                appliedTo: 'Short Teller',
+                verificationStatus: 'VERIFIED'
+              }
+            ];
+            parsed.transactions = [...accountabilitySeedTxns, ...(parsed.transactions || [])];
+            needsSave = true;
+          }
           // Ensure inventory is upgraded to the rebuilt schema with sequential 'no' and assignment history
           if (!parsed.inventory || parsed.inventory.length === 0 || !parsed.inventory[0].no || parsed.inventory[0].imei !== undefined) {
             const fresh = buildDefaultStore();
@@ -1346,13 +1578,17 @@ class Store {
   }
 
   subscribe(listener) {
+    if (!this.listeners) this.listeners = [];
     this.listeners.push(listener);
     return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
+      if (this.listeners) {
+        this.listeners = this.listeners.filter(l => l !== listener);
+      }
     };
   }
 
   notify() {
+    if (!this.listeners) this.listeners = [];
     this.listeners.forEach(fn => {
       try { fn(this.data); } catch (err) { console.error('Listener err:', err); }
     });
@@ -1441,6 +1677,152 @@ class Store {
       caAppliedPayments,
       currentCABalance,
       transactions: empTxns
+    };
+  }
+
+  // Comprehensive Employee Accountability: Strictly separate Shortage & Cash Advance
+  getEmployeeAccountability(empQuery) {
+    if (!empQuery || typeof empQuery !== 'string') return null;
+    const q = empQuery.trim().toLowerCase();
+    const allStaff = [...(this.data.employees || []), ...(this.data.relievers || [])];
+    const staff = allStaff.find(s => 
+      (s.name && s.name.toLowerCase().includes(q)) || 
+      (s.id && s.id.toLowerCase() === q)
+    );
+
+    const targetName = staff ? staff.name : empQuery.trim();
+    const targetId = staff ? staff.id : '';
+    const targetRole = staff ? staff.role : '';
+
+    const txns = this.data.transactions || [];
+    const empTxns = txns.filter(t => {
+      if (t.verificationStatus === 'REJECTED') return false;
+      const tName = (t.name || '').toLowerCase();
+      const tId = (t.employeeId || '').toLowerCase();
+      return (targetId && tId === targetId.toLowerCase()) || 
+             tName.includes(q) || 
+             (targetName && tName === targetName.toLowerCase());
+    });
+
+    if (empTxns.length === 0 && !staff) return null;
+
+    // Chronological order for history ledger
+    const sortedTxns = [...empTxns].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // 1. Short Teller Tracking
+    let shortOriginal = 0;
+    let shortPaid = 0;
+    const shortHistory = [];
+
+    // 2. Cash Advance Tracking
+    let caOriginal = 0;
+    let caPaid = 0;
+    const caHistory = [];
+
+    for (const t of sortedTxns) {
+      const amt = Number(t.amount) || 0;
+      const descUpper = (t.description || '').toUpperCase();
+      const noteUpper = (t.note || '').toUpperCase();
+      const appliedUpper = (t.appliedTo || '').toUpperCase();
+
+      // Check Shortage
+      if (t.classification === 'SHORT' || descUpper.includes('SHORT') || t.transactionType === 'SHORT_TELLER') {
+        shortOriginal += amt;
+        const currentBal = Math.max(0, shortOriginal - shortPaid);
+        shortHistory.push({
+          date: t.date,
+          transaction: 'Short Teller',
+          amount: amt,
+          appliedTo: 'Shortage',
+          remaining: currentBal
+        });
+      }
+      // Check Cash Advance
+      else if (t.classification === 'CA' || descUpper.includes('C.A.') || descUpper.includes('CASH ADVANCE') || t.transactionType === 'CASH_ADVANCE') {
+        caOriginal += amt;
+        const currentBal = Math.max(0, caOriginal - caPaid);
+        caHistory.push({
+          date: t.date,
+          transaction: 'Cash Advance',
+          amount: amt,
+          appliedTo: 'C.A.',
+          remaining: currentBal
+        });
+      }
+      // Check Payment
+      else if (t.classification === 'PAYMENT' || descUpper.includes('PAYMENT')) {
+        const isShortPayment = appliedUpper.includes('SHORT') || descUpper.includes('SHORT') || noteUpper.includes('SHORT');
+        const isCaPayment = t.applyToCA || appliedUpper.includes('CA') || appliedUpper.includes('C.A.') || descUpper.includes('C.A.') || noteUpper.includes('CA');
+
+        if (isShortPayment) {
+          shortPaid += amt;
+          const currentBal = Math.max(0, shortOriginal - shortPaid);
+          shortHistory.push({
+            date: t.date,
+            transaction: 'Payment',
+            amount: amt,
+            appliedTo: 'Short Teller',
+            remaining: currentBal
+          });
+        } else if (isCaPayment) {
+          caPaid += amt;
+          const currentBal = Math.max(0, caOriginal - caPaid);
+          caHistory.push({
+            date: t.date,
+            transaction: 'Payment',
+            amount: amt,
+            appliedTo: 'C.A.',
+            remaining: currentBal
+          });
+        } else {
+          // If payment doesn't specify, allocate to open shortage if any, else CA
+          if (shortOriginal > shortPaid) {
+            shortPaid += amt;
+            const currentBal = Math.max(0, shortOriginal - shortPaid);
+            shortHistory.push({
+              date: t.date,
+              transaction: 'Payment',
+              amount: amt,
+              appliedTo: 'Short Teller',
+              remaining: currentBal
+            });
+          } else {
+            caPaid += amt;
+            const currentBal = Math.max(0, caOriginal - caPaid);
+            caHistory.push({
+              date: t.date,
+              transaction: 'Payment',
+              amount: amt,
+              appliedTo: 'C.A.',
+              remaining: currentBal
+            });
+          }
+        }
+      }
+    }
+
+    const shortOutstanding = Math.max(0, shortOriginal - shortPaid);
+    const caOutstanding = Math.max(0, caOriginal - caPaid);
+
+    return {
+      name: targetName,
+      employeeId: targetId,
+      role: targetRole || 'Staff Member',
+      hasObligations: shortOriginal > 0 || caOriginal > 0,
+      shortage: {
+        original: shortOriginal,
+        paid: shortPaid,
+        outstanding: shortOutstanding,
+        status: shortOriginal > 0 && shortOutstanding === 0 ? 'FULLY SETTLED' : (shortOutstanding > 0 ? 'OUTSTANDING' : 'NO SHORTAGE'),
+        history: shortHistory
+      },
+      cashAdvance: {
+        original: caOriginal,
+        paid: caPaid,
+        outstanding: caOutstanding,
+        status: caOriginal > 0 && caOutstanding === 0 ? 'FULLY SETTLED' : (caOutstanding > 0 ? 'OUTSTANDING' : 'NO ADVANCE'),
+        history: caHistory
+      }
     };
   }
 
@@ -1757,6 +2139,18 @@ class Store {
         const normStatus = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
         if (e.status !== normStatus) {
           e.status = normStatus;
+          modified = true;
+        }
+
+        // Clean up corrupted collector purok values in localStorage
+        if (e.purok === 'Tagum / Kapalong /' || e.purok === 'Carmen /' || (typeof e.purok === 'string' && e.purok.trim().endsWith('/'))) {
+          e.purok = '-';
+          if ((e.role || '').toUpperCase().includes('COLLECTOR')) {
+            if (e.id === 'DDN005-SC002') e.municipality = 'Tagum / Kapalong / Talaingod';
+            else if (e.id === 'DDN005-SC003') e.municipality = 'Carmen / Tagum';
+            else if (e.area) e.municipality = e.area;
+            e.address = e.municipality;
+          }
           modified = true;
         }
       });

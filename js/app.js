@@ -126,11 +126,11 @@ function renderAll() {
   renderEmployeesTable();
   renderFleetTrackingList();
   renderPipelines();
-  renderFinance();
   renderRestDays();
   renderInventory();
   renderOrganization();
   renderEodReport();
+  if (window.expensesPayment) window.expensesPayment.render();
   updateSidebarBadges();
 }
 
@@ -185,8 +185,8 @@ const ROUTE_MAP = {
   '/sales-collection': 'view-pipelines',
   '/pipelines': 'view-pipelines',
   '/expenses': 'view-finance',
-  '/purchasing': 'view-finance',
   '/finance': 'view-finance',
+  '/expenses-payment': 'view-finance',
   '/inventory': 'view-inventory',
   '/reports': 'view-reports',
   '/eod-reports': 'view-reports',
@@ -326,9 +326,9 @@ window.switchView = function(viewId, updateHistory = true) {
       renderCharts();
     }, 100);
   } else if (viewId === 'view-finance') {
-    setTimeout(() => {
-      if (window.expensesPayment) window.expensesPayment.init();
-    }, 50);
+    if (window.expensesPayment) {
+      window.expensesPayment.init();
+    }
   }
 
   // Update URL route and browser history
@@ -478,12 +478,12 @@ function renderDashboardActivityFeed() {
     },
     {
       time: '14:20 PST',
-      event: 'Fuel & Motor Lease recorded for Field Route (₱1,200.00)',
+      event: 'Collection remittance confirmed for Field Route (₱1,200.00)',
       person: 'JOHN',
       role: 'Collector',
-      module: 'Expenses',
-      view: 'view-finance',
-      badge: 'badge-danger'
+      module: 'Collection',
+      view: 'view-pipelines',
+      badge: 'badge-success'
     },
     {
       time: '13:50 PST',
@@ -740,6 +740,16 @@ function parseAddressHelper(rawAddress) {
     return { purok: '-', municipality: '-' };
   }
   const addr = rawAddress.trim();
+
+  // If the address contains multi-municipality route slashes (e.g. "Tagum / Kapalong / Talaingod" or "Carmen / Tagum")
+  // and has no comma, this is an assigned coverage territory/route without a purok!
+  if (addr.includes('/') && !addr.includes(',')) {
+    return {
+      purok: '-',
+      municipality: addr
+    };
+  }
+
   const knownMunicipalities = [
     'Sto. Tomas', 'Sto Tomas', 'St. Tomas',
     'Tagum City', 'Tagum',
@@ -753,7 +763,7 @@ function parseAddressHelper(rawAddress) {
     const re = new RegExp('(?:,\\s*|\\s+)' + m.replace('.', '\\.') + '\\s*$', 'i');
     if (re.test(addr)) {
       const match = addr.match(re);
-      const purokPart = addr.substring(0, match.index).trim().replace(/,\s*$/, '');
+      const purokPart = addr.substring(0, match.index).trim().replace(/[,\/\s]+$/, '');
       return {
         purok: purokPart || '-',
         municipality: m
@@ -764,8 +774,9 @@ function parseAddressHelper(rawAddress) {
   const parts = addr.split(',').map(s => s.trim()).filter(Boolean);
   if (parts.length > 1) {
     const muni = parts.pop();
+    const pPart = parts.join(', ').replace(/[,\/\s]+$/, '').trim();
     return {
-      purok: parts.join(', ') || '-',
+      purok: pPart || '-',
       municipality: muni
     };
   } else if (parts.length === 1) {
@@ -1038,12 +1049,23 @@ function renderEmployeesTable(customList = null) {
     else if (roleUpper.includes('RELIEVER')) roleBadge = 'badge-neutral';
 
     // 1. Purok / Street / Barangay & 2. Municipality
-    let purok = emp.purok;
-    let muni = emp.municipality;
-    if (!purok || purok === '-' || !muni || muni === '-') {
+    // Auto-clean any legacy dangling slash puroks
+    let rawP = emp.purok;
+    if (rawP === 'Tagum / Kapalong /' || rawP === 'Carmen /' || (typeof rawP === 'string' && rawP.trim().endsWith('/'))) {
+      rawP = '-';
+      emp.purok = '-';
+    }
+
+    let purok = (rawP !== undefined && rawP !== null && String(rawP).trim() !== '') ? String(rawP).trim() : '-';
+    let muni = (emp.municipality !== undefined && emp.municipality !== null && String(emp.municipality).trim() !== '' && String(emp.municipality).trim() !== '-') 
+      ? String(emp.municipality).trim() 
+      : ((emp.area && emp.area !== '-') ? emp.area : '-');
+
+    // Only fallback to address parsing if NEITHER purok nor municipality was ever defined on the record
+    if ((emp.purok === undefined || emp.purok === null) && (!muni || muni === '-')) {
       const parsed = parseAddressHelper(emp.address || emp.area || '');
-      if (!purok || purok === '-') purok = parsed.purok;
-      if (!muni || muni === '-') muni = parsed.municipality;
+      purok = parsed.purok;
+      muni = parsed.municipality;
     }
 
     // 3. Booth Code (Checks boothCode or booth)
@@ -1335,14 +1357,27 @@ window.editEmployee = function(id) {
   }
 
   // Purok / Street / Barangay
-  let rawPurok = emp.purok && emp.purok !== '-' ? emp.purok : parsed.purok;
-  if (rawPurok === '-') rawPurok = '';
-  document.getElementById('emp-form-purok').value = rawPurok || '';
+  let rawPurok = '';
+  if (emp.purok !== undefined && emp.purok !== null) {
+    const pTrim = String(emp.purok).trim();
+    if (pTrim !== '-' && pTrim !== 'Tagum / Kapalong /' && pTrim !== 'Carmen /' && !pTrim.endsWith('/')) {
+      rawPurok = pTrim;
+    }
+  } else if (parsed.purok && parsed.purok !== '-' && !parsed.purok.endsWith('/')) {
+    rawPurok = parsed.purok;
+  }
+  document.getElementById('emp-form-purok').value = rawPurok;
 
   // Municipality
-  let rawMuni = emp.municipality && emp.municipality !== '-' ? emp.municipality : parsed.municipality;
-  if (rawMuni === '-') rawMuni = '';
-  document.getElementById('emp-form-muni').value = rawMuni || '';
+  let rawMuni = '';
+  if (emp.municipality && emp.municipality !== '-') {
+    rawMuni = emp.municipality;
+  } else if (emp.area && emp.area !== '-') {
+    rawMuni = emp.area;
+  } else if (parsed.municipality && parsed.municipality !== '-') {
+    rawMuni = parsed.municipality;
+  }
+  document.getElementById('emp-form-muni').value = rawMuni;
 
   // Assigned Booth Code
   const boothVal = (emp.boothCode && emp.boothCode !== '-') ? emp.boothCode : (emp.booth && emp.booth !== '-' ? emp.booth : '');
@@ -1414,9 +1449,11 @@ window.saveEmployeeForm = function() {
     }
   }
 
-  const purok = document.getElementById('emp-form-purok').value.trim() || '-';
-  const muni = document.getElementById('emp-form-muni').value.trim() || '-';
-  const fullAddress = purok !== '-' ? `${purok}, ${muni}` : muni;
+  const inputPurok = document.getElementById('emp-form-purok').value.trim();
+  const purok = (inputPurok === '' || inputPurok === '-') ? '-' : inputPurok;
+  const inputMuni = document.getElementById('emp-form-muni').value.trim();
+  const muni = (inputMuni === '' || inputMuni === '-') ? '-' : inputMuni;
+  const fullAddress = purok !== '-' ? (muni !== '-' ? `${purok}, ${muni}` : purok) : muni;
   const boothCode = document.getElementById('emp-form-booth').value.trim() || '-';
   
   // Contact phone: preserve number if provided, otherwise N/A (never invent)
@@ -1464,7 +1501,7 @@ window.saveEmployeeForm = function() {
     name: name,
     role: role,
     department: document.getElementById('emp-form-dept').value,
-    area: muni,
+    area: muni !== '-' ? muni : (purok !== '-' ? purok : '-'),
     address: fullAddress,
     purok: purok,
     municipality: muni,
@@ -1712,7 +1749,7 @@ window.focusEmployeeRoute = function(empId) {
 
 window.focusBoothInView = function(boothId) {
   sfx.playClick();
-  window.switchView('view-finance');
+  window.switchView('view-pipelines');
 };
 
 window.pingEmployee = function(empId) {
@@ -1737,15 +1774,6 @@ window.triggerEmergencyBroadcast = function() {
 function renderPipelines() {
   if (window.eodEngine && typeof window.eodEngine.init === 'function') {
     window.eodEngine.init();
-  }
-}
-
-// =========================================================================
-// VIEW 5: EXPENSES & PAYMENT
-// =========================================================================
-function renderFinance(filteredList = null) {
-  if (window.expensesPayment) {
-    window.expensesPayment.init();
   }
 }
 
@@ -3036,7 +3064,7 @@ window.commitStep2ToSystem = function() {
 
   sfx.playChime();
   alert(`✅ Report successfully synchronized! Income, Salary, and all ${step2ReportData.expenses.length} expenses committed to the Financial Ledger and EOD Audit Sheet.`);
-  window.switchView('view-finance');
+  window.switchView('view-reports');
 };
 
 // Export Step 2 Report to Excel matching Template Format

@@ -77,7 +77,7 @@
     });
   }
 
-  // --- XML Utility Functions ---
+  // --- XML & Data Utility Functions ---
   function escapeXml(str) {
     if (!str && str !== 0) return '';
     return String(str)
@@ -99,6 +99,46 @@
     }
   }
 
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function showToast(message, type = 'success') {
+    let toastContainer = document.getElementById('app-toast-container');
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.id = 'app-toast-container';
+      toastContainer.style.cssText = 'position: fixed; top: 24px; right: 24px; z-index: 999999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;';
+      document.body.appendChild(toastContainer);
+    }
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+      display: flex; align-items: center; gap: 10px; padding: 12px 20px;
+      background: #0b1329; color: #f8fafc; border: 1px solid ${type === 'danger' ? '#ef4444' : '#10b981'};
+      border-radius: 8px; font-size: 13.5px; font-weight: 600;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.7); pointer-events: auto;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    `;
+    const icon = type === 'danger' ? '⚠️' : '✅';
+    toast.innerHTML = `<span style="font-size: 16px;">${icon}</span> <span>${escapeXml(message)}</span>`;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(-10px)';
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  }
+  window.showToast = showToast;
+
   // --- Core EOD Automation Engine ---
   class EODAutomationEngine {
     constructor() {
@@ -106,6 +146,8 @@
       this.parsedData = null;
       this.isProcessing = false;
       this.reportsHistory = [];
+      this.currentActiveReport = null;
+      this.pendingDeleteDateKey = null;
     }
 
     async init() {
@@ -168,6 +210,22 @@
     async loadHistory() {
       try {
         this.reportsHistory = await getAllReportsFromDB();
+
+        // Background sync to server repository
+        try {
+          const srvRes = await fetch('/api/reports');
+          if (srvRes.ok) {
+            const srvReports = await srvRes.json();
+            for (const r of this.reportsHistory) {
+              if (r && r.dateKey && !srvReports.some(sr => sr.dateKey === r.dateKey) && r.ddnBlob) {
+                this.syncReportToServer(r);
+              }
+            }
+          }
+        } catch (syncErr) {
+          // Local fallback mode
+        }
+
         // Sort descending by date
         this.reportsHistory.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
       } catch (e) {
@@ -597,6 +655,7 @@
         };
 
         await saveReportToDB(reportRecord);
+        await this.syncReportToServer(reportRecord);
         await this.loadHistory();
         this.renderHistoryTable();
 
@@ -952,12 +1011,13 @@
       document.getElementById('val-all-gross').innerText = fmt(m.overall.gross);
       document.getElementById('val-all-salary').innerText = fmt(m.overall.salary);
 
-      // Bind download buttons
+      // Bind download buttons with human-readable filenames & Content-Disposition
+      this.currentActiveReport = report;
       const btnDDN = document.getElementById('btn-download-ddn');
       const btnSAMAL = document.getElementById('btn-download-samal');
 
-      btnDDN.onclick = () => this.downloadBlob(report.ddnBlob, report.ddnFileName);
-      btnSAMAL.onclick = () => this.downloadBlob(report.samalBlob, report.samalFileName);
+      btnDDN.onclick = () => this.downloadReport(report.dateKey, 'ddn');
+      btnSAMAL.onclick = () => this.downloadReport(report.dateKey, 'samal');
 
       document.getElementById('eod-results-card').style.display = 'block';
     }
@@ -978,7 +1038,7 @@
       }
 
       tbody.innerHTML = this.reportsHistory.map(r => `
-        <tr>
+        <tr id="report-row-${r.dateKey}">
           <td style="font-weight: 700; color: var(--text-primary);">
             📅 ${r.dateFormatted}
           </td>
@@ -991,12 +1051,12 @@
             </span>
           </td>
           <td>
-            <button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;" onclick="window.eodEngine.downloadHistoryReport('${r.dateKey}', 'ddn')">
+            <button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 5px 10px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" onclick="window.eodEngine.downloadReport('${r.dateKey}', 'ddn')">
               📥 ${escapeXml(r.ddnFileName)}
             </button>
           </td>
           <td>
-            <button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;" onclick="window.eodEngine.downloadHistoryReport('${r.dateKey}', 'samal')">
+            <button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 5px 10px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" onclick="window.eodEngine.downloadReport('${r.dateKey}', 'samal')">
               📥 ${escapeXml(r.samalFileName)}
             </button>
           </td>
@@ -1006,7 +1066,7 @@
             </span>
           </td>
           <td>
-            <button class="btn btn-danger btn-sm" style="font-size: 11px; padding: 4px 8px;" onclick="window.eodEngine.deleteHistoryReport('${r.dateKey}')" title="Delete record">
+            <button class="btn btn-danger btn-sm" style="font-size: 11px; padding: 5px 8px; font-weight: 700; border-radius: 4px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #ef4444;" onclick="window.eodEngine.requestDeleteReport('${r.dateKey}')" title="Delete record">
               🗑️
             </button>
           </td>
@@ -1014,24 +1074,136 @@
       `).join('');
     }
 
-    async downloadHistoryReport(dateKey, type) {
-      const report = await getReportFromDB(dateKey);
-      if (!report) {
-        alert('Report file not found in storage.');
-        return;
+    async syncReportToServer(reportRecord) {
+      if (!reportRecord || !reportRecord.dateKey) return;
+      try {
+        let ddnBase64 = null;
+        let samalBase64 = null;
+        if (reportRecord.ddnBlob) {
+          ddnBase64 = await blobToBase64(reportRecord.ddnBlob);
+        }
+        if (reportRecord.samalBlob) {
+          samalBase64 = await blobToBase64(reportRecord.samalBlob);
+        }
+        const payload = {
+          dateKey: reportRecord.dateKey,
+          dateFormatted: reportRecord.dateFormatted,
+          sourceFile: reportRecord.sourceFile,
+          recordsCount: reportRecord.recordsCount,
+          ddnFileName: reportRecord.ddnFileName,
+          samalFileName: reportRecord.samalFileName,
+          ddnBase64,
+          samalBase64,
+          metrics: reportRecord.metrics,
+          timestamp: reportRecord.timestamp
+        };
+        await fetch('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn('syncReportToServer error:', err);
       }
-      if (type === 'ddn') {
-        this.downloadBlob(report.ddnBlob, report.ddnFileName);
-      } else {
-        this.downloadBlob(report.samalBlob, report.samalFileName);
+    }
+
+    async downloadReport(dateKey, type) {
+      const report = (await getReportFromDB(dateKey)) || this.reportsHistory.find(r => r.dateKey === dateKey);
+      const filename = report ? (type === 'samal' ? report.samalFileName : report.ddnFileName) : `${type.toUpperCase()}.xlsx`;
+
+      // 1. Verify availability on server repository
+      try {
+        const checkRes = await fetch(`/api/reports/check?dateKey=${encodeURIComponent(dateKey)}&type=${type}`);
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (!checkData.exists && report && (report.ddnBlob || report.samalBlob)) {
+            await this.syncReportToServer(report);
+          }
+        }
+      } catch (e) {
+        console.warn('Server download pre-check:', e);
+      }
+
+      // 2. Perform download via HTTP GET endpoint with Content-Disposition
+      const downloadUrl = `/api/reports/download?dateKey=${encodeURIComponent(dateKey)}&type=${encodeURIComponent(type)}`;
+
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.setAttribute('download', filename);
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+      }, 1000);
+    }
+
+    async downloadHistoryReport(dateKey, type) {
+      return this.downloadReport(dateKey, type);
+    }
+
+    requestDeleteReport(dateKey) {
+      const report = this.reportsHistory.find(r => r.dateKey === dateKey);
+      this.pendingDeleteDateKey = dateKey;
+      const dateText = report ? (report.dateFormatted || report.dateKey) : dateKey;
+
+      const targetEl = document.getElementById('delete-report-date-target');
+      if (targetEl) targetEl.innerText = dateText;
+
+      const modal = document.getElementById('modal-delete-report-confirm');
+      if (modal) modal.classList.add('active');
+    }
+
+    cancelDeleteReport() {
+      this.pendingDeleteDateKey = null;
+      const modal = document.getElementById('modal-delete-report-confirm');
+      if (modal) modal.classList.remove('active');
+      if (window.sfx && window.sfx.playClick) window.sfx.playClick();
+    }
+
+    async confirmDeleteReport() {
+      const dateKey = this.pendingDeleteDateKey;
+      if (!dateKey) return;
+
+      try {
+        // 1. Delete from IndexedDB (real database state deletion)
+        await deleteReportFromDB(dateKey);
+
+        // 2. Delete from server repository (removes persisted generated files & meta)
+        try {
+          await fetch(`/api/reports?dateKey=${encodeURIComponent(dateKey)}`, {
+            method: 'DELETE'
+          });
+        } catch (srvErr) {
+          console.warn('Server file deletion notice:', srvErr);
+        }
+
+        // 3. Clear active results card if it was showing this report
+        if (this.currentActiveReport && this.currentActiveReport.dateKey === dateKey) {
+          const resultsCard = document.getElementById('eod-results-card');
+          if (resultsCard) resultsCard.style.display = 'none';
+          this.currentActiveReport = null;
+        }
+
+        // 4. Close modal and clean pending state
+        this.pendingDeleteDateKey = null;
+        const modal = document.getElementById('modal-delete-report-confirm');
+        if (modal) modal.classList.remove('active');
+
+        // 5. Reload history and re-render history table immediately
+        await this.loadHistory();
+        this.renderHistoryTable();
+
+        // 6. Audio cue & success notification
+        if (window.sfx && window.sfx.playChime) window.sfx.playChime();
+        showToast('Report deleted successfully.', 'success');
+      } catch (err) {
+        console.error('Failed to delete report:', err);
+        alert('Failed to delete report: ' + (err.message || err));
       }
     }
 
     async deleteHistoryReport(dateKey) {
-      if (!confirm(`Are you sure you want to remove the completed report record for ${dateKey}?`)) return;
-      await deleteReportFromDB(dateKey);
-      await this.loadHistory();
-      this.renderHistoryTable();
+      this.requestDeleteReport(dateKey);
     }
 
     downloadBlob(blob, filename) {

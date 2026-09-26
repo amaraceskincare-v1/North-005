@@ -1,1095 +1,1588 @@
 /**
- * APEX OmniERP - Expenses & Payment Module Controller
- * Core Daily Financial Tracking, Running CA Balance, Shortage Monitoring & OCR Integration
+ * APEX OmniERP - Expenses & Payment Module v2.0
+ * Single-Source-of-Truth synchronized transaction model.
+ * Full OCR + Shortage/CA Tracking + Ledger History & Real-Time Balance Synchronization
  */
-
 class ExpensesPaymentController {
   constructor() {
-    this.currentTab = 'tab-main-table';
+    this.activeTab = 'expenses';
     this.searchQuery = '';
-    this.classificationFilter = 'ALL';
-    this.statusFilter = 'ALL';
-    this.targetDailyDate = '2024-09-06';
-    this.targetMonthlyDate = '2024-09';
-    this.currentPage = 1;
-    this.rowsPerPage = 15;
-    this.pendingOcrItems = [];
-    this.pendingOcrMetadata = null;
-    this.editingTransactionId = null;
+    this.selectedTeller = 'JUVYLYN H. TURA';
+    this.selectedCollector = 'MARK ANTHONY (MAC2)';
+    this.currentCalendarYear = 2026;
+    this.currentCalendarMonth = 8;
+    this.pendingOcrResult = null;
+    this.uploadedImageSrc = null;
+    this.uploadedImageHash = null;
+    this.zoomLevel = 1;
+    this.initialized = false;
+
+    // Pagination states
+    this.expensesPage = 1;
+    this.expensesPageSize = 10;
+    this.shortLedgerPage = 1;
+    this.shortLedgerPageSize = 10;
+    this.caLedgerPage = 1;
+    this.caLedgerPageSize = 10;
+    this.paymentsPage = 1;
+    this.paymentsPageSize = 10;
+
+    // Editing & Confirm state
+    this._editingTxnId = null;
+    this._editingSection = 'expense';
+    this._editingOriginalAmount = 0;
+    this._confirmCallback = null;
+    this._confirmCancelCallback = null;
   }
 
   init() {
-    this.renderTabs();
+    this.ensureSeedData();
+    if (!this.initialized) {
+      this.attachEventListeners();
+      this.initialized = true;
+    }
+    this.render();
+  }
+
+  // =========================================================================
+  // SEED DATA
+  // =========================================================================
+  ensureSeedData() {
+    const store = window.appStore;
+    if (!store) return;
+    if (!store.data.transactions) store.data.transactions = [];
+    if (!store.data.uploadedImageHashes) store.data.uploadedImageHashes = [];
+    if (!store.data.employees) store.data.employees = [];
+
+    // Purge any lingering deletedFromTracker records from older sessions
+    const initialLen = store.data.transactions.length;
+    store.data.transactions = store.data.transactions.filter(t => !t.deletedFromTracker);
+    if (store.data.transactions.length !== initialLen) {
+      store.save();
+    }
+
+    if (store.data.epSeedInitialized) {
+      return;
+    }
+    if (store.data.transactions.length > 0) {
+      store.data.epSeedInitialized = true;
+      store.save();
+      return;
+    }
+
+    if (!store.data.employees.find(e => e.name && e.name.toUpperCase().includes('TURA'))) {
+      store.data.employees.push({
+        id: 'DDN005-TEL-TURA',
+        name: 'JUVYLYN H. TURA',
+        role: 'Teller',
+        department: 'dept-tel',
+        area: 'Tagum City Station',
+        boothCode: 'DDN-1140',
+        status: 'Terminated',
+        etsStatus: 'Offline'
+      });
+    }
+
+    store.data.transactions.forEach(t => {
+      if (t.name && t.name.toUpperCase().includes('JENYVA')) t.name = 'JUVYLYN H. TURA';
+    });
+
+    if (!store.data.transactions.some(t => t.id === 'TXN-TURA-01')) {
+      store.data.transactions = store.data.transactions.filter(t => !(t.name && t.name.toUpperCase().includes('TURA')));
+      store.data.transactions.push(
+        { id: 'TXN-TURA-01', date: '2026-09-22', amount: 1140.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 22)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+        { id: 'TXN-TURA-02', date: '2026-09-23', amount: 325.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 23)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+        { id: 'TXN-TURA-PAY01', date: '2026-09-24', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+        { id: 'TXN-TURA-PAY02', date: '2026-09-25', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+        { id: 'TXN-TURA-PAY03', date: '2026-09-27', amount: 540.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Final settlement payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' }
+      );
+    }
+
+    if (!store.data.transactions.some(t => t.id === 'TXN-MAC-CA01')) {
+      store.data.transactions = store.data.transactions.filter(t => !(t.name && t.name.toUpperCase().includes('MARK ANTHONY')));
+      store.data.transactions.push(
+        { id: 'TXN-MAC-CA01', date: '2026-09-20', amount: 5000.00, description: 'CASH ADVANCE', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Collector Field Operations CA', classification: 'CA', type: 'CASH ADVANCE', transactionType: 'CASH_ADVANCE', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+        { id: 'TXN-MAC-PAY01', date: '2026-09-24', amount: 500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
+        { id: 'TXN-MAC-PAY02', date: '2026-09-25', amount: 1000.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
+        { id: 'TXN-MAC-PAY03', date: '2026-09-28', amount: 3500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Settlement payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' }
+      );
+    }
+
+    if (!store.data.transactions.some(t => t.id === 'TXN-EXP-01')) {
+      store.data.transactions.push(
+        { id: 'TXN-EXP-01', date: '2026-09-24', amount: 1200.00, description: 'Fuel Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Field gas allowance', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-02', date: '2026-09-24', amount: 400.00, description: 'Rent Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Motorcycle rental', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-03', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum', note: 'Tagum station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-04', date: '2026-09-24', amount: 30.00, description: 'WiFi Allowance', name: 'Maryjane Fernandez', role: 'Teller', boothCode: 'DDN-1782', location: 'Carmen', note: 'Carmen station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-05', date: '2026-09-24', amount: 50.00, description: 'WiFi Allowance', name: 'Luzviminda Galasatan', role: 'Teller', boothCode: 'DDN-1475', location: 'Panabo', note: 'Panabo station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-06', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Almera Digamon', role: 'Teller', boothCode: 'DDN-768', location: 'Panabo', note: 'Panabo Cagangohan station', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-07', date: '2026-09-24', amount: 10.00, description: 'WiFi Allowance (Hinay Signal)', name: 'Daisy Mae Senadero', role: 'Teller', boothCode: 'DDN-1739', location: 'Sto. Tomas', note: 'Hinay Signal', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-08', date: '2026-09-24', amount: 700.00, description: 'Labor and Deploy Booth', name: 'Logistics Team', role: 'General', boothCode: '', location: 'Panabo Area', note: 'Panabo Area deployment', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-09', date: '2026-09-24', amount: 1000.00, description: 'Meals and Snacks Survey Taza Northman', name: 'Survey Team', role: 'General', boothCode: '', location: 'Davao Del Norte', note: 'Survey Taza Northman', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-12', date: '2026-09-24', amount: 1520.00, description: 'Rent Fee P-6 Liboganon Tagum', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum Liboganon', note: 'Sep. 30 - Oct. 30, To Rulan A.R.', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+        { id: 'TXN-EXP-13', date: '2026-09-24', amount: 330.00, description: 'POS Load 1 Month DDN-1716', name: 'Princess Solamillo', role: 'Teller', boothCode: 'DDN-1716', location: 'Tagum / Sto. Tomas', note: 'Data plan load', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' }
+      );
+    }
+    store.save();
+  }
+
+  // =========================================================================
+  // EVENT LISTENERS
+  // =========================================================================
+  attachEventListeners() {
+    const searchInput = document.getElementById('ep-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this.searchQuery = (e.target.value || '').trim();
+        this.expensesPage = 1;
+        this.shortLedgerPage = 1;
+        this.caLedgerPage = 1;
+        this.paymentsPage = 1;
+        this.renderCurrentTab();
+      });
+    }
+
+    document.querySelectorAll('.ep-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.switchTab(btn.getAttribute('data-tab')));
+    });
+
+    const fileInput = document.getElementById('ep-image-upload-input');
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (file) {
+          this.handleImageFile(file);
+        }
+        fileInput.value = ''; // Reset value so re-selecting same file triggers change
+      });
+    }
+
+    const dropZone = document.getElementById('ep-upload-zone');
+    if (dropZone) {
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-active');
+      });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-active');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          this.handleImageFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    const editAmountInput = document.getElementById('ep-edit-txn-amount');
+    if (editAmountInput) {
+      editAmountInput.addEventListener('input', () => this.handleEditAmountInput());
+    }
+    const editTypeSelect = document.getElementById('ep-edit-txn-type');
+    if (editTypeSelect) {
+      editTypeSelect.addEventListener('change', () => this.handleEditAmountInput());
+    }
+
+    // Delegated click handler for Edit and Delete buttons across all tabs
+    document.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.ep-btn-edit') || e.target.closest('[data-ep-action="edit"]');
+      if (editBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const txnId = editBtn.getAttribute('data-id');
+        const section = editBtn.getAttribute('data-section') || 'expense';
+        if (txnId) {
+          this.openEditModal(txnId, section);
+        }
+        return;
+      }
+
+      const delBtn = e.target.closest('.ep-btn-delete') || e.target.closest('[data-ep-action="delete"]');
+      if (delBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const txnId = delBtn.getAttribute('data-id');
+        const section = delBtn.getAttribute('data-section') || 'expense';
+        if (txnId) {
+          if (section === 'expense') this.onDeleteExpenseClicked(txnId);
+          else if (section === 'short') this.onDeleteShortClicked(txnId);
+          else if (section === 'ca') this.onDeleteCAClicked(txnId);
+          else if (section === 'payment') this.onDeletePaymentClicked(txnId);
+        }
+        return;
+      }
+    });
+  }
+
+  triggerUpload() {
+    const fileInput = document.getElementById('ep-image-upload-input');
+    if (fileInput) fileInput.click();
+  }
+
+  switchTab(tabName) {
+    if (window.sfx) window.sfx.playClick();
+    this.activeTab = tabName;
+    document.querySelectorAll('.ep-tab-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-tab') === tabName);
+    });
+    document.querySelectorAll('.ep-tab-content').forEach(c => {
+      c.classList.toggle('active', c.id === ('ep-tab-' + tabName));
+    });
     this.renderCurrentTab();
   }
 
-  switchTab(tabId) {
-    if (window.sfx) window.sfx.playClick();
-    this.currentTab = tabId;
-    this.renderTabs();
-    this.renderCurrentTab();
-  }
-
-  renderTabs() {
-    const tabs = [
-      { id: 'tab-main-table', label: '📋 Main Expenses & Payment Table' },
-      { id: 'tab-daily-monitoring', label: '📊 Daily Payment Monitoring' },
-      { id: 'tab-monthly-summary', label: '📅 Monthly Summary & Expenses' },
-      { id: 'tab-transaction-log', label: '📑 Transaction Log' },
-      { id: 'tab-ocr-archive', label: '🗄️ OCR Document Archive' }
-    ];
-
-    const container = document.getElementById('ep-tab-buttons');
-    if (!container) return;
-
-    container.innerHTML = tabs.map(tab => `
-      <button class="btn ${this.currentTab === tab.id ? 'btn-primary' : 'btn-secondary'}"
-        style="padding: 8px 16px; font-weight: 700; font-size: 13px;"
-        onclick="window.expensesPayment.switchTab('${tab.id}')">
-        ${tab.label}
-      </button>
-    `).join('');
-  }
-
-  renderCurrentTab() {
-    const panels = ['tab-main-table', 'tab-daily-monitoring', 'tab-monthly-summary', 'tab-transaction-log', 'tab-ocr-archive'];
-    panels.forEach(p => {
-      const el = document.getElementById(`ep-${p}`);
-      if (el) el.style.display = (this.currentTab === p) ? 'block' : 'none';
-    });
-
-    if (this.currentTab === 'tab-main-table') this.renderMainTable();
-    else if (this.currentTab === 'tab-daily-monitoring') this.renderDailyMonitoring();
-    else if (this.currentTab === 'tab-monthly-summary') this.renderMonthlySummary();
-    else if (this.currentTab === 'tab-transaction-log') this.renderTransactionLog();
-    else if (this.currentTab === 'tab-ocr-archive') this.renderOcrArchive();
-  }
-
   // =========================================================================
-  // SUB-VIEW 1: MAIN EXPENSES & PAYMENT TABLE
-  // Primary Columns: | DATE | AMOUNT | DESCRIPTION | NAME | BOOTH CODE | LOCATION | DATE PERIOD COVER | NOTE |
+  // IMAGE UPLOAD + DUPLICATE DETECTION
   // =========================================================================
-  renderMainTable() {
-    const tbody = document.getElementById('ep-main-table-tbody');
-    if (!tbody) return;
-
-    const store = window.appStore;
-    const txns = store.getTransactions();
-
-    let filtered = txns.filter(t => {
-      // Classification filter
-      if (this.classificationFilter !== 'ALL' && t.classification !== this.classificationFilter) {
-        return false;
-      }
-      // Status filter
-      if (this.statusFilter !== 'ALL' && t.verificationStatus !== this.statusFilter) {
-        return false;
-      }
-      // Search query
-      if (this.searchQuery) {
-        const q = this.searchQuery.toLowerCase();
-        const fullStr = `${t.date} ${t.amount} ${t.description} ${t.name} ${t.boothCode} ${t.location} ${t.datePeriodCover} ${t.note} ${t.employeeId}`.toLowerCase();
-        return fullStr.includes(q);
-      }
-      return true;
-    });
-
-    // Pagination
-    const totalCount = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(totalCount / this.rowsPerPage));
-    if (this.currentPage > totalPages) this.currentPage = totalPages;
-    if (this.currentPage < 1) this.currentPage = 1;
-
-    const startIdx = (this.currentPage - 1) * this.rowsPerPage;
-    const pageItems = filtered.slice(startIdx, startIdx + this.rowsPerPage);
-
-    // Update pagination labels
-    const pageInfo = document.getElementById('ep-page-info');
-    if (pageInfo) pageInfo.textContent = `Page ${this.currentPage} of ${totalPages} (${totalCount} records)`;
-
-    const controls = document.getElementById('ep-pagination-controls');
-    if (controls) {
-      controls.innerHTML = `
-        <button class="btn btn-secondary btn-sm" ${this.currentPage <= 1 ? 'disabled' : ''} onclick="window.expensesPayment.changePage(${this.currentPage - 1})">Prev</button>
-        <span style="font-weight: 700; font-size: 12px; margin: 0 6px;">${this.currentPage}</span>
-        <button class="btn btn-secondary btn-sm" ${this.currentPage >= totalPages ? 'disabled' : ''} onclick="window.expensesPayment.changePage(${this.currentPage + 1})">Next</button>
-      `;
-    }
-
-    if (pageItems.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="9" style="text-align: center; padding: 32px; color: var(--text-muted); font-size: 13.5px;">
-            🔍 No expense or payment transactions match the selected criteria.
-          </td>
-        </tr>
-      `;
-      return;
-    }
-
-    tbody.innerHTML = pageItems.map(t => {
-      // Classification styling
-      let classBadge = 'badge-neutral';
-      let amountColor = 'color: var(--text-main);';
-      if (t.classification === 'OTHER') {
-        classBadge = 'badge-info';
-      } else if (t.classification === 'CA') {
-        classBadge = 'badge-warning';
-        amountColor = 'color: #f59e0b; font-weight: 700;';
-      } else if (t.classification === 'SHORT') {
-        classBadge = 'badge-danger';
-        amountColor = 'color: #ef4444; font-weight: 700;';
-      } else if (t.classification === 'PAYMENT') {
-        classBadge = 'badge-success';
-        amountColor = 'color: #10b981; font-weight: 700;';
-      }
-
-      // Verification Badge
-      let verifyBadge = '<span class="badge badge-success" style="font-size: 10px;">VERIFIED</span>';
-      if (t.verificationStatus === 'PENDING VERIFICATION') {
-        verifyBadge = '<span class="badge badge-warning" style="font-size: 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b;">PENDING</span>';
-      } else if (t.verificationStatus === 'REJECTED') {
-        verifyBadge = '<span class="badge badge-danger" style="font-size: 10px;">REJECTED</span>';
-      }
-
-      // Collector Rule: Collectors NEVER have Booth Codes
-      const isCollector = (t.role || '').toUpperCase() === 'COLLECTOR';
-      const displayBooth = isCollector ? '-' : (t.boothCode || '-');
-
-      const isPersonnel = t.employeeId && (t.classification === 'CA' || t.classification === 'SHORT' || t.classification === 'PAYMENT' || isCollector);
-
-      return `
-        <tr style="cursor: ${isPersonnel ? 'pointer' : 'default'};" onclick="${isPersonnel ? `window.expensesPayment.openPersonnelDrilldown('${t.employeeId}')` : ''}">
-          <td style="font-family: monospace; font-size: 12px; font-weight: 700; color: var(--text-muted);">${t.date}</td>
-          <td style="text-align: right; ${amountColor} font-size: 13.5px;">₱${Number(t.amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-          <td>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span class="badge ${classBadge}" style="font-size: 10px; padding: 2px 6px;">${t.classification}</span>
-              <strong style="color: var(--text-main); font-size: 12.5px;">${t.description}</strong>
-            </div>
-            ${t.applyToCA && t.classification === 'PAYMENT' ? '<span style="font-size: 10.5px; color: #10b981; font-weight: 600;">✓ Applied to CA</span>' : ''}
-          </td>
-          <td>
-            <div style="font-weight: 700; color: var(--text-main); font-size: 12.5px;">${t.name || '-'}</div>
-            ${t.role ? `<span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">${t.role}</span>` : ''}
-          </td>
-          <td style="text-align: center;">
-            <code style="font-size: 12px; font-weight: 700; color: ${displayBooth !== '-' ? 'var(--primary)' : 'var(--text-dim)'};">${displayBooth}</code>
-          </td>
-          <td style="font-size: 12px; color: var(--text-main); font-weight: 600;">${t.location || '-'}</td>
-          <td style="font-size: 12px; font-family: monospace; color: var(--text-muted);">${t.datePeriodCover || '-'}</td>
-          <td style="font-size: 12px; color: var(--text-muted); max-width: 200px;">${t.note || '-'}</td>
-          <td style="text-align: center;" onclick="event.stopPropagation()">
-            <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
-              ${verifyBadge}
-              <button class="btn btn-secondary btn-sm" style="padding: 2px 6px; font-size: 11px;" onclick="window.expensesPayment.openEditModal('${t.id}')" title="Edit Entry">✏️</button>
-              <button class="btn btn-secondary btn-sm" style="padding: 2px 6px; font-size: 11px; color: #ef4444;" onclick="window.expensesPayment.deleteEntry('${t.id}')" title="Delete Entry">🗑️</button>
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  changePage(newPage) {
-    this.currentPage = newPage;
-    this.renderMainTable();
-  }
-
-  setClassificationFilter(val) {
-    this.classificationFilter = val;
-    this.currentPage = 1;
-    this.renderMainTable();
-  }
-
-  setStatusFilter(val) {
-    this.statusFilter = val;
-    this.currentPage = 1;
-    this.renderMainTable();
-  }
-
-  setSearchQuery(val) {
-    this.searchQuery = val.trim();
-    this.currentPage = 1;
-    this.renderMainTable();
-  }
-
-  // =========================================================================
-  // SUB-VIEW 2: DAILY PAYMENT MONITORING
-  // Top 5 Metric Cards + Grouped Personnel Table
-  // | EMPLOYEE | ROLE | CA | SHORT | PAYMENT | CA BALANCE |
-  // =========================================================================
-  renderDailyMonitoring() {
-    const dateInput = document.getElementById('ep-daily-date-picker');
-    if (dateInput && !dateInput.value) {
-      dateInput.value = this.targetDailyDate;
-    }
-    const targetDate = (dateInput && dateInput.value) ? dateInput.value : this.targetDailyDate;
-    this.targetDailyDate = targetDate;
-
-    const data = window.appStore.getDailyPaymentMonitoring(targetDate);
-    const summary = data.summary;
-
-    // Update Top 5 Cards
-    const cardCA = document.getElementById('ep-card-total-ca');
-    const cardShort = document.getElementById('ep-card-total-short');
-    const cardPay = document.getElementById('ep-card-total-pay');
-    const cardNetCA = document.getElementById('ep-card-net-recovered');
-    const cardBal = document.getElementById('ep-card-pending-ca-bal');
-
-    if (cardCA) cardCA.textContent = `₱${summary.totalCA.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-    if (cardShort) cardShort.textContent = `₱${summary.totalShort.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-    if (cardPay) cardPay.textContent = `₱${summary.totalPayments.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-    if (cardNetCA) cardNetCA.textContent = `₱${summary.netRecoveredCA.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-    if (cardBal) cardBal.textContent = `₱${summary.pendingCABalance.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-
-    const tbody = document.getElementById('ep-daily-monitoring-tbody');
-    if (!tbody) return;
-
-    if (data.records.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted); font-size: 13.5px;">
-            ℹ️ No personnel payment, advance, or shortage activity recorded on <strong>${targetDate}</strong>.
-          </td>
-        </tr>
-      `;
-      return;
-    }
-
-    tbody.innerHTML = data.records.map(rec => {
-      const roleUpper = (rec.role || '').toUpperCase();
-      let roleBadge = 'badge-info';
-      if (roleUpper.includes('COLLECTOR')) roleBadge = 'badge-warning';
-      else if (roleUpper.includes('RELIEVER')) roleBadge = 'badge-neutral';
-
-      return `
-        <tr style="cursor: pointer;" onclick="window.expensesPayment.openPersonnelDrilldown('${rec.employeeId}')">
-          <td>
-            <div style="font-weight: 700; color: var(--text-main); font-size: 13px;">${rec.name}</div>
-            <div style="font-size: 11px; font-family: monospace; color: var(--text-muted);">${rec.employeeId}</div>
-          </td>
-          <td>
-            <span class="badge ${roleBadge}" style="font-size: 11px; font-weight: 700;">${rec.role}</span>
-          </td>
-          <td style="text-align: right; font-weight: 700; color: ${rec.ca > 0 ? '#f59e0b' : 'var(--text-dim)'};">
-            ${rec.ca > 0 ? `₱${rec.ca.toLocaleString('en-PH', {minimumFractionDigits: 2})}` : '-'}
-          </td>
-          <td style="text-align: right; font-weight: 700; color: ${rec.short > 0 ? '#ef4444' : 'var(--text-dim)'};">
-            ${rec.short > 0 ? `₱${rec.short.toLocaleString('en-PH', {minimumFractionDigits: 2})}` : '-'}
-          </td>
-          <td style="text-align: right; font-weight: 700; color: ${rec.payment > 0 ? '#10b981' : 'var(--text-dim)'};">
-            ${rec.payment > 0 ? `₱${rec.payment.toLocaleString('en-PH', {minimumFractionDigits: 2})}` : '-'}
-            ${rec.caAppliedPayment > 0 ? `<div style="font-size: 10px; color: #10b981;">(₱${rec.caAppliedPayment.toLocaleString('en-PH', {minimumFractionDigits: 2})} applied to CA)</div>` : ''}
-          </td>
-          <td style="text-align: right; font-weight: 800; font-size: 14px; color: ${rec.caBalance > 0 ? 'var(--primary)' : '#10b981'};">
-            ₱${rec.caBalance.toLocaleString('en-PH', {minimumFractionDigits: 2})}
-          </td>
-          <td style="text-align: center;" onclick="event.stopPropagation()">
-            <button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px; font-weight: 700;" onclick="window.expensesPayment.openPersonnelDrilldown('${rec.employeeId}')">
-              🔍 Drilldown
-            </button>
-          </td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  onDailyDateChange(newDate) {
-    this.targetDailyDate = newDate;
-    this.renderDailyMonitoring();
-  }
-
-  // =========================================================================
-  // SUB-VIEW 3: MONTHLY SUMMARY & EXPENSES
-  // 1. OTHER General Operating Expenses Breakdown Table
-  // 2. Personnel Category Totals (Collector, Teller, Reliever)
-  // =========================================================================
-  renderMonthlySummary() {
-    const picker = document.getElementById('ep-monthly-picker');
-    if (picker && !picker.value) picker.value = this.targetMonthlyDate;
-    const yearMonth = (picker && picker.value) ? picker.value : this.targetMonthlyDate;
-    this.targetMonthlyDate = yearMonth;
-
-    const data = window.appStore.getMonthlySummary(yearMonth);
-
-    // 1. Render OTHER Expenses Breakdown
-    const otherTbody = document.getElementById('ep-monthly-other-tbody');
-    const totalOtherEl = document.getElementById('ep-monthly-total-other');
-    if (totalOtherEl) totalOtherEl.textContent = `₱${data.totalOtherExpenses.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-
-    if (otherTbody) {
-      const items = Object.entries(data.otherExpensesByType);
-      if (items.length === 0) {
-        otherTbody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">No operating expenses found for ${yearMonth}.</td></tr>`;
-      } else {
-        otherTbody.innerHTML = items.map(([desc, total]) => {
-          const pct = data.totalOtherExpenses > 0 ? ((total / data.totalOtherExpenses) * 100).toFixed(1) : '0.0';
-          return `
-            <tr>
-              <td style="font-weight: 700; color: var(--text-main); font-size: 13px;">${desc}</td>
-              <td style="text-align: right; font-weight: 700; font-size: 13px; color: var(--primary);">₱${total.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-              <td style="text-align: right; font-size: 12px; color: var(--text-muted); font-weight: 600;">${pct}%</td>
-            </tr>
-          `;
-        }).join('');
-      }
-    }
-
-    // 2. Render Personnel Role Breakdown
-    const roleTbody = document.getElementById('ep-monthly-role-tbody');
-    if (roleTbody) {
-      const roles = ['Collector', 'Teller', 'Reliever'];
-      roleTbody.innerHTML = roles.map(role => {
-        const rData = data.roleSummary[role] || { ca: 0, short: 0, payment: 0, caBalance: 0 };
-        return `
-          <tr>
-            <td style="font-weight: 700; font-size: 13px; color: var(--text-main); text-transform: uppercase;">
-              ${role}s
-            </td>
-            <td style="text-align: right; font-weight: 700; color: #f59e0b;">₱${rData.ca.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-            <td style="text-align: right; font-weight: 700; color: #ef4444;">₱${rData.short.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-            <td style="text-align: right; font-weight: 700; color: #10b981;">₱${rData.payment.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-            <td style="text-align: right; font-weight: 800; font-size: 14px; color: var(--primary);">₱${rData.caBalance.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-          </tr>
-        `;
-      }).join('');
-    }
-  }
-
-  onMonthlyDateChange(newVal) {
-    this.targetMonthlyDate = newVal;
-    this.renderMonthlySummary();
-  }
-
-  // =========================================================================
-  // SUB-VIEW 4: TRANSACTION LOG (Financial Ledger)
-  // Focused on CA, SHORT, PAYMENT movements with running balance
-  // =========================================================================
-  renderTransactionLog() {
-    const tbody = document.getElementById('ep-txn-log-tbody');
-    if (!tbody) return;
-
-    const txns = window.appStore.getTransactions()
-      .filter(t => t.classification === 'CA' || t.classification === 'SHORT' || t.classification === 'PAYMENT');
-
-    if (txns.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">No personnel financial transactions logged yet.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = txns.map(t => {
-      let classBadge = 'badge-info';
-      if (t.classification === 'CA') classBadge = 'badge-warning';
-      if (t.classification === 'SHORT') classBadge = 'badge-danger';
-      if (t.classification === 'PAYMENT') classBadge = 'badge-success';
-
-      const caBal = window.appStore.getEmployeeCABalance(t.employeeId, t.date);
-
-      return `
-        <tr>
-          <td style="font-family: monospace; font-size: 12px;">${t.id}</td>
-          <td style="font-family: monospace; font-size: 12px; font-weight: 600;">${t.date}</td>
-          <td><span class="badge ${classBadge}" style="font-weight: 700; font-size: 10.5px;">${t.classification}</span></td>
-          <td>
-            <strong style="color: var(--text-main); font-size: 12.5px;">${t.name}</strong>
-            <div style="font-size: 11px; color: var(--text-muted);">${t.role} • ${t.employeeId}</div>
-          </td>
-          <td>${t.description}</td>
-          <td style="text-align: right; font-weight: 700; font-size: 13px;">₱${Number(t.amount).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-          <td style="text-align: center;">
-            ${t.classification === 'PAYMENT' ? (t.applyToCA ? '<span class="badge badge-success" style="font-size: 10px;">YES (-CA)</span>' : '<span class="badge badge-neutral" style="font-size: 10px;">NO</span>') : '-'}
-          </td>
-          <td style="text-align: right; font-weight: 800; font-size: 13px; color: var(--primary);">₱${caBal.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  // =========================================================================
-  // SUB-VIEW 5: OCR DOCUMENT ARCHIVE
-  // =========================================================================
-  renderOcrArchive() {
-    const tbody = document.getElementById('ep-ocr-archive-tbody');
-    if (!tbody) return;
-
-    const docs = window.appStore.getOcrDocuments();
-    if (docs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 28px; color: var(--text-muted);">No OCR documents archived yet. Upload yellow pad or receipt scans to view archive.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = docs.map(d => `
-      <tr>
-        <td><code>${d.id}</code></td>
-        <td style="font-weight: 700; color: var(--text-main);">${d.filename}</td>
-        <td style="font-family: monospace; font-size: 12px;">${d.reportDate}</td>
-        <td style="font-family: monospace; font-size: 11.5px; color: var(--text-muted);">${d.uploadedAt}</td>
-        <td style="text-align: center;"><span class="badge badge-info" style="font-weight: 700;">${d.itemsCount} Items</span></td>
-        <td style="text-align: center;"><span class="badge badge-success" style="font-weight: 700;">${d.status}</span></td>
-        <td style="text-align: center;">
-          <button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px;" onclick="window.expensesPayment.viewOcrSnapshot('${d.id}')">
-            👁️ View Snapshot
-          </button>
-        </td>
-      </tr>
-    `).join('');
-  }
-
-  // =========================================================================
-  // PERSONNEL FINANCIAL PROFILE DRILLDOWN MODAL
-  // =========================================================================
-  openPersonnelDrilldown(employeeId) {
-    if (!employeeId) return;
-    if (window.sfx) window.sfx.playClick();
-
-    const store = window.appStore;
-    const allStaff = [...store.getEmployees(), ...(store.data.relievers || [])];
-    const staff = allStaff.find(s => s.id === employeeId || s.name.toLowerCase() === employeeId.toLowerCase());
-
-    const summary = store.getEmployeeSummary(employeeId);
-
-    const nameEl = document.getElementById('ep-drill-name');
-    const idEl = document.getElementById('ep-drill-id');
-    const roleEl = document.getElementById('ep-drill-role');
-    const boothEl = document.getElementById('ep-drill-booth');
-    const locEl = document.getElementById('ep-drill-location');
-
-    const cardCA = document.getElementById('ep-drill-ca-total');
-    const cardPay = document.getElementById('ep-drill-pay-total');
-    const cardBal = document.getElementById('ep-drill-ca-balance');
-    const cardShort = document.getElementById('ep-drill-short-total');
-
-    const roleName = staff ? staff.role : 'Personnel';
-    const isCollector = roleName.toUpperCase() === 'COLLECTOR';
-
-    if (nameEl) nameEl.textContent = staff ? staff.name : employeeId;
-    if (idEl) idEl.textContent = staff ? staff.id : employeeId;
-    if (roleEl) roleEl.textContent = roleName;
-    if (boothEl) boothEl.textContent = isCollector ? 'NONE (Collector Rule)' : (staff ? staff.boothCode || '-' : '-');
-    if (locEl) locEl.textContent = staff ? (staff.municipality || staff.address || '-') : '-';
-
-    if (cardCA) cardCA.textContent = `₱${summary.totalCA.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-    if (cardPay) cardPay.textContent = `₱${summary.caAppliedPayments.toLocaleString('en-PH', {minimumFractionDigits: 2})} (of ₱${summary.totalPayments.toLocaleString('en-PH', {minimumFractionDigits: 2})})`;
-    if (cardBal) cardBal.textContent = `₱${summary.currentCABalance.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-    if (cardShort) cardShort.textContent = `₱${summary.totalShort.toLocaleString('en-PH', {minimumFractionDigits: 2})}`;
-
-    const tbody = document.getElementById('ep-drill-ledger-tbody');
-    if (tbody) {
-      if (summary.transactions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">No recorded transactions for this personnel.</td></tr>`;
-      } else {
-        // Calculate running CA balance
-        let running = 0;
-        const sorted = [...summary.transactions].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-
-        tbody.innerHTML = sorted.map(t => {
-          let classBadge = 'badge-info';
-          if (t.classification === 'CA') {
-            classBadge = 'badge-warning';
-            running += Number(t.amount);
-          } else if (t.classification === 'SHORT') {
-            classBadge = 'badge-danger';
-            // SHORT does NOT change running CA balance
-          } else if (t.classification === 'PAYMENT') {
-            classBadge = 'badge-success';
-            if (t.applyToCA) running -= Number(t.amount);
-          }
-
-          return `
-            <tr>
-              <td style="font-family: monospace; font-size: 11.5px;">${t.date}</td>
-              <td><span class="badge ${classBadge}" style="font-size: 10px; font-weight: 700;">${t.classification}</span></td>
-              <td style="font-size: 12px; font-weight: 600;">${t.description}</td>
-              <td style="text-align: right; font-weight: 700; font-size: 12.5px;">₱${Number(t.amount).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-              <td style="text-align: center; font-size: 11px;">
-                ${t.classification === 'PAYMENT' ? (t.applyToCA ? '<span style="color: #10b981; font-weight: 700;">YES</span>' : '<span style="color: var(--text-muted);">NO</span>') : '-'}
-              </td>
-              <td style="text-align: right; font-weight: 800; font-size: 13px; color: var(--primary);">₱${Math.max(0, running).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-              <td style="font-size: 11.5px; color: var(--text-muted);">${t.note || '-'}</td>
-            </tr>
-          `;
-        }).join('');
-      }
-    }
-
-    document.getElementById('modal-ep-drilldown').classList.add('active');
-  }
-
-  // =========================================================================
-  // OCR RECOGNITION & EXTRACTION MODAL WORKFLOW
-  // =========================================================================
-  openOcrWorkflowModal() {
-    if (window.sfx) window.sfx.playClick();
-    const modal = document.getElementById('modal-ep-ocr');
-    if (!modal) return;
-
-    // Reset review container
-    document.getElementById('ep-ocr-review-section').style.display = 'none';
-    document.getElementById('ep-ocr-upload-section').style.display = 'block';
-    modal.classList.add('active');
-  }
-
-  // Load the Realistic Yellow Pad Reference (Image 1) and Run Recognition
-  loadYellowPadSample() {
-    if (window.sfx) window.sfx.playClick();
-    const canvas = window.ocrEngine.generateYellowPadSampleCanvas();
-    this.processOcrImage(canvas, 'Yellow_Pad_Ledger_2024-09-06.jpg');
-  }
-
-  handleOcrFileUpload(file) {
+  async handleImageFile(file) {
     if (!file) return;
+    const sig = file.name + '::' + file.size + '::' + file.lastModified;
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        this.processOcrImage(img, file.name);
-      };
-      img.src = e.target.result;
+    reader.onload = async (e) => {
+      this.uploadedImageSrc = e.target.result;
+      this.uploadedImageHash = sig;
+      const store = window.appStore;
+      const hashes = (store && store.data.uploadedImageHashes) || [];
+      const existing = hashes.find(h => h.hash === sig);
+      if (existing) {
+        this.showDuplicateWarning(existing);
+        return;
+      }
+      await this.runOcrProcess(this.uploadedImageSrc);
     };
     reader.readAsDataURL(file);
   }
 
-  async processOcrImage(imgSource, filename) {
-    const progressEl = document.getElementById('ep-ocr-progress-container');
-    const progressBar = document.getElementById('ep-ocr-progress-bar');
-    const progressText = document.getElementById('ep-ocr-progress-text');
+  showDuplicateWarning(existingRecord) {
+    const modal = document.getElementById('modal-ep-duplicate-warning');
+    if (!modal) return;
+    const dateEl = document.getElementById('ep-dup-existing-date');
+    if (dateEl) dateEl.textContent = (existingRecord && existingRecord.date) || 'Previous Upload Session';
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
 
-    if (progressEl) progressEl.style.display = 'block';
-    if (progressBar) progressBar.style.width = '20%';
-    if (progressText) progressText.textContent = 'Pre-processing document image (Binarization & Contrast)...';
+  closeDuplicateModal() {
+    const modal = document.getElementById('modal-ep-duplicate-warning');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
+  }
 
-    setTimeout(async () => {
-      try {
-        if (progressBar) progressBar.style.width = '60%';
-        if (progressText) progressText.textContent = 'Executing handwriting OCR and text segmentation...';
+  proceedDespiteDuplicate() {
+    this.closeDuplicateModal();
+    if (this.uploadedImageSrc) this.runOcrProcess(this.uploadedImageSrc);
+  }
 
-        // Preprocess image
-        const processed = window.ocrEngine.preprocessImage(imgSource);
+  async runOcrProcess(imageSrc) {
+    this.showOcrLoading(true);
+    const pText = document.getElementById('ep-ocr-progress-text');
+    const pBar = document.getElementById('ep-ocr-progress-bar');
+    if (pText) pText.textContent = 'Preprocessing handwritten image with OpenCV filters...';
+    if (pBar) pBar.style.width = '35%';
 
-        // Run OCR Engine
-        const ocrRes = await window.ocrEngine.recognize(processed, (pct) => {
-          if (progressBar) progressBar.style.width = `${Math.min(95, pct)}%`;
-          if (progressText) progressText.textContent = `Recognizing text: ${pct}%...`;
+    try {
+      await new Promise(r => setTimeout(r, 400));
+      if (pBar) pBar.style.width = '70%';
+      if (pText) pText.textContent = 'Reading handwritten entries line-by-line...';
+
+      if (window.ocrEngine && typeof window.ocrEngine.recognize === 'function') {
+        const result = await window.ocrEngine.recognize(imageSrc, (pct) => {
+          if (pBar) pBar.style.width = Math.max(35, pct) + '%';
         });
-
-        if (progressBar) progressBar.style.width = '100%';
-        if (progressText) progressText.textContent = 'Smart Field Extraction & System Sync Complete!';
-
-        setTimeout(() => {
-          if (progressEl) progressEl.style.display = 'none';
-          this.displayOcrReview(ocrRes, filename, processed);
-        }, 300);
-
-      } catch (err) {
-        console.error('OCR Processing error:', err);
-        if (progressEl) progressEl.style.display = 'none';
-        alert('OCR Processing failed. Please check the image format and try again.');
+        this.pendingOcrResult = (result && result.reportData) || window.ocrEngine.parseHandwrittenReport('');
+      } else if (window.ocrEngine && typeof window.ocrEngine.parseHandwrittenReport === 'function') {
+        this.pendingOcrResult = window.ocrEngine.parseHandwrittenReport('');
+      } else {
+        this.pendingOcrResult = { items: [] };
       }
-    }, 250);
+      if (pBar) pBar.style.width = '100%';
+      await new Promise(r => setTimeout(r, 200));
+      this.showOcrLoading(false);
+      this.openReviewModal();
+    } catch (err) {
+      console.warn('OCR fallback:', err);
+      this.pendingOcrResult = window.ocrEngine ? window.ocrEngine.parseHandwrittenReport('') : { items: [] };
+      this.showOcrLoading(false);
+      this.openReviewModal();
+    }
   }
 
-  displayOcrReview(ocrRes, filename, processedCanvas) {
-    const reportData = ocrRes.reportData || {};
-    const items = reportData.items || [];
-    this.pendingOcrItems = JSON.parse(JSON.stringify(items));
-
-    // Calculate total expenses and payments
-    let totalExp = 0;
-    let totalPay = 0;
-    items.forEach(i => {
-      if (i.classification === 'OTHER' || i.classification === 'CA') totalExp += Number(i.amount);
-      if (i.classification === 'PAYMENT') totalPay += Number(i.amount);
-    });
-
-    this.pendingOcrMetadata = {
-      filename: filename,
-      reportDate: reportData.date || '2024-09-06',
-      fingerprint: `fp_${filename}_${totalExp}`,
-      rawTextSnapshot: ocrRes.rawText || '',
-      itemsCount: items.length,
-      totalExpenses: totalExp,
-      totalPayments: totalPay
-    };
-
-    // Check for Duplicate Document
-    const isDup = window.appStore.checkDuplicateDocument(
-      this.pendingOcrMetadata.fingerprint,
-      filename,
-      this.pendingOcrMetadata.reportDate,
-      totalExp
-    );
-
-    if (isDup) {
-      if (window.sfx) window.sfx.playAlert();
-      document.getElementById('modal-ep-duplicate').classList.add('active');
+  openReviewModalFromButton() {
+    if (this.uploadedImageSrc && !this.pendingOcrResult) {
+      this.runOcrProcess(this.uploadedImageSrc);
       return;
     }
-
-    this.showOcrReviewUI(processedCanvas);
+    if (!this.pendingOcrResult) {
+      this.pendingOcrResult = window.ocrEngine ? window.ocrEngine.parseHandwrittenReport('') : { items: [] };
+    }
+    this.openReviewModal();
   }
 
-  showOcrReviewUI(processedCanvas) {
-    document.getElementById('ep-ocr-upload-section').style.display = 'none';
-    const reviewSection = document.getElementById('ep-ocr-review-section');
-    reviewSection.style.display = 'block';
-
-    // Image preview
-    const previewContainer = document.getElementById('ep-ocr-preview-container');
-    if (previewContainer && processedCanvas) {
-      previewContainer.innerHTML = '';
-      processedCanvas.style.maxWidth = '100%';
-      processedCanvas.style.height = 'auto';
-      processedCanvas.style.borderRadius = '6px';
-      processedCanvas.style.border = '1px solid var(--border-color)';
-      previewContainer.appendChild(processedCanvas);
+  showOcrLoading(show) {
+    const overlay = document.getElementById('ep-ocr-loading-overlay');
+    if (overlay) {
+      overlay.style.display = show ? 'flex' : 'none';
+      overlay.classList.toggle('active', show);
     }
-
-    // Raw text pane
-    const rawPane = document.getElementById('ep-ocr-raw-pane');
-    if (rawPane && this.pendingOcrMetadata) {
-      rawPane.textContent = this.pendingOcrMetadata.rawTextSnapshot;
-    }
-
-    this.renderPendingOcrItemsTable();
   }
 
-  renderPendingOcrItemsTable() {
-    const tbody = document.getElementById('ep-ocr-items-tbody');
+  openReviewModal() {
+    if (!this.pendingOcrResult) {
+      this.pendingOcrResult = window.ocrEngine ? window.ocrEngine.parseHandwrittenReport('') : { items: [] };
+    }
+    const modal = document.getElementById('modal-ep-ocr-review');
+    if (!modal) return;
+    const imgEl = document.getElementById('ep-review-modal-img');
+    if (imgEl) {
+      imgEl.src = this.uploadedImageSrc || '';
+      imgEl.style.display = this.uploadedImageSrc ? 'block' : 'none';
+      this.zoomLevel = 1;
+      imgEl.style.transform = 'scale(1)';
+    }
+    const noMsg = document.getElementById('ep-review-no-img-msg');
+    if (noMsg) noMsg.style.display = this.uploadedImageSrc ? 'none' : 'flex';
+    this.renderReviewTable();
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+
+  closeReviewModal() {
+    const modal = document.getElementById('modal-ep-ocr-review');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
+  }
+
+  // =========================================================================
+  // OCR VERIFICATION / REVIEW TABLE
+  // =========================================================================
+  renderReviewTable() {
+    const tbody = document.getElementById('ep-review-tbody');
     if (!tbody) return;
-
-    tbody.innerHTML = this.pendingOcrItems.map((item, idx) => {
-      const isPayment = item.classification === 'PAYMENT';
-      const isCollector = (item.role || '').toUpperCase() === 'COLLECTOR';
-
-      return `
-        <tr>
-          <td style="font-size: 11px; font-family: monospace;">${item.ocrRawText || item.description}</td>
-          <td>
-            <select class="form-select" style="padding: 2px 6px; font-size: 11px; font-weight: 700;" onchange="window.expensesPayment.updatePendingItem(${idx}, 'classification', this.value)">
-              <option value="OTHER" ${item.classification === 'OTHER' ? 'selected' : ''}>OTHER</option>
-              <option value="CA" ${item.classification === 'CA' ? 'selected' : ''}>CASH ADVANCE (CA)</option>
-              <option value="SHORT" ${item.classification === 'SHORT' ? 'selected' : ''}>SHORT</option>
-              <option value="PAYMENT" ${item.classification === 'PAYMENT' ? 'selected' : ''}>PAYMENT</option>
-            </select>
-          </td>
-          <td>
-            <input type="number" step="0.01" class="form-input" style="padding: 3px 6px; font-size: 12px; font-weight: 700; width: 90px; text-align: right;" value="${item.amount}" onchange="window.expensesPayment.updatePendingItem(${idx}, 'amount', parseFloat(this.value))">
-          </td>
-          <td>
-            <input type="text" class="form-input" style="padding: 3px 6px; font-size: 11.5px; width: 150px;" value="${item.name || ''}" placeholder="Staff Name" onchange="window.expensesPayment.updatePendingItem(${idx}, 'name', this.value)">
-          </td>
-          <td>
-            <input type="text" class="form-input" style="padding: 3px 6px; font-size: 11.5px; width: 80px;" value="${isCollector ? '' : (item.boothCode || '')}" ${isCollector ? 'disabled placeholder="No Booth"' : 'placeholder="Booth Code"'} onchange="window.expensesPayment.updatePendingItem(${idx}, 'boothCode', this.value)">
-          </td>
-          <td style="text-align: center;">
-            ${isPayment ? `
-              <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
-                <label style="font-size: 11px; font-weight: 700; cursor: pointer; color: ${item.applyToCA ? '#10b981' : 'var(--text-muted)'};">
-                  <input type="checkbox" ${item.applyToCA ? 'checked' : ''} onchange="window.expensesPayment.updatePendingItem(${idx}, 'applyToCA', this.checked)">
-                  Apply to CA?
-                </label>
-              </div>
-            ` : `<span style="font-size: 11px; color: var(--text-dim);">-</span>`}
-          </td>
-        </tr>
-      `;
-    }).join('');
-  }
-
-  updatePendingItem(idx, field, val) {
-    if (this.pendingOcrItems[idx]) {
-      this.pendingOcrItems[idx][field] = val;
-      if (field === 'classification' && val === 'PAYMENT') {
-        this.pendingOcrItems[idx].applyToCA = true;
-      }
-      this.renderPendingOcrItemsTable();
-    }
-  }
-
-  // Save OCR Copy (Snapshot archive only, without committing)
-  saveOcrCopyOnly() {
-    if (!this.pendingOcrMetadata) return;
-    if (window.sfx) window.sfx.playChime();
-
-    const doc = {
-      id: `DOC-SNAP-${Date.now().toString().slice(-6)}`,
-      filename: this.pendingOcrMetadata.filename,
-      uploadedAt: new Date().toLocaleString(),
-      reportDate: this.pendingOcrMetadata.reportDate,
-      fingerprint: this.pendingOcrMetadata.fingerprint,
-      rawTextSnapshot: this.pendingOcrMetadata.rawTextSnapshot,
-      itemsCount: this.pendingOcrItems.length,
-      status: 'OCR_SNAPSHOT_SAVED',
-      totalExpenses: this.pendingOcrMetadata.totalExpenses,
-      totalPayments: this.pendingOcrMetadata.totalPayments
-    };
-
-    window.appStore.addOcrDocument(doc);
-    window.appStore.addAuditLog({
-      eventType: 'OCR_SNAPSHOT_SAVED',
-      user: 'PJC (Supervisor)',
-      details: `Saved immutable OCR snapshot for ${doc.filename}`,
-      recordId: doc.id
-    });
-
-    alert('✅ OCR Copy & Raw Interpretation Snapshot saved to Document Archive!');
-    window.closeModals();
-    this.switchTab('tab-ocr-archive');
-  }
-
-  // Approve & Verify into System
-  approveAndVerifyOcrItems() {
-    if (!this.pendingOcrItems || this.pendingOcrItems.length === 0) {
-      alert('No items to verify.');
+    if (!this.pendingOcrResult || !this.pendingOcrResult.items) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-muted);">No records detected.</td></tr>';
       return;
     }
+    const items = this.pendingOcrResult.items;
+    let html = '';
+    items.forEach((item, idx) => {
+      const isShort = item.type === 'SHORT';
+      const isCA = item.type === 'CASH ADVANCE';
+      const isPay = item.type === 'PAYMENT';
+      let statusBadge = '<span class="badge badge-info" style="font-size:10px;">EXPENSE</span>';
+      if (isShort) statusBadge = '<span class="badge badge-danger" style="font-size:10px;background:#ef4444;color:#fff;">SHORT</span>';
+      else if (isCA) statusBadge = '<span class="badge" style="font-size:10px;background:#8b5cf6;color:#fff;">C.A.</span>';
+      else if (isPay) statusBadge = '<span class="badge badge-success" style="font-size:10px;background:#10b981;color:#fff;">PAYMENT</span>';
 
-    if (window.sfx) window.sfx.playChime();
+      const violates = isCA && (item.role || '').toUpperCase().includes('TELLER');
+      const caWarn = violates ? '<div style="color:#ef4444;font-size:11px;font-weight:700;">TELLERS cannot have CASH ADVANCE!</div>' : '';
 
+      html += '<tr data-index="' + idx + '" style="' + (violates ? 'background:rgba(239,68,68,0.1);' : '') + '">' +
+        '<td style="text-align:center;font-weight:700;color:var(--text-muted);">' + (idx + 1) + '</td>' +
+        '<td><input type="number" class="form-input form-input-sm" value="' + item.amount + '" style="width:95px;font-weight:700;text-align:right;" onchange="window.expensesPayment.updateReviewRow(' + idx + ', \'amount\', this.value)"></td>' +
+        '<td><input type="text" class="form-input form-input-sm" value="' + this.escapeHtml(item.description || '') + '" style="min-width:140px;" onchange="window.expensesPayment.updateReviewRow(' + idx + ', \'description\', this.value)"></td>' +
+        '<td><input type="text" class="form-input form-input-sm" value="' + this.escapeHtml(item.employee || '') + '" style="min-width:130px;" onchange="window.expensesPayment.updateReviewRow(' + idx + ', \'employee\', this.value)"></td>' +
+        '<td><select class="form-select form-select-sm" style="font-size:11.5px;" onchange="window.expensesPayment.updateReviewRow(' + idx + ', \'type\', this.value)">' +
+        '<option value="EXPENSE"' + (item.type === 'EXPENSE' ? ' selected' : '') + '>EXPENSE</option>' +
+        '<option value="SHORT"' + (item.type === 'SHORT' ? ' selected' : '') + '>SHORT (Teller)</option>' +
+        '<option value="CASH ADVANCE"' + (item.type === 'CASH ADVANCE' ? ' selected' : '') + '>CASH ADVANCE (Collector)</option>' +
+        '<option value="PAYMENT"' + (item.type === 'PAYMENT' ? ' selected' : '') + '>PAYMENT</option>' +
+        '<option value="OTHER"' + (item.type === 'OTHER' ? ' selected' : '') + '>OTHER</option>' +
+        '</select>' + caWarn + '</td>' +
+        '<td><input type="text" class="form-input form-input-sm" value="' + (item.date || '') + '" style="width:105px;" onchange="window.expensesPayment.updateReviewRow(' + idx + ', \'date\', this.value)"></td>' +
+        '<td style="text-align:center;">' + statusBadge + '</td>' +
+        '<td><input type="text" class="form-input form-input-sm" value="' + this.escapeHtml(item.notes || item.originalEntry || '') + '" placeholder="Notes" style="min-width:120px;font-size:11px;" onchange="window.expensesPayment.updateReviewRow(' + idx + ', \'notes\', this.value)"></td>' +
+        '<td style="text-align:center;"><button class="btn btn-secondary btn-xs" onclick="window.expensesPayment.removeReviewRow(' + idx + ')" style="color:#ef4444;">X</button></td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+
+    const countEl = document.getElementById('ep-review-count');
+    if (countEl) countEl.textContent = items.length + ' Records Detected';
+    const expSum = items.filter(i => i.type === 'EXPENSE').reduce((s, i) => s + Number(i.amount || 0), 0);
+    const shortSum = items.filter(i => i.type === 'SHORT').reduce((s, i) => s + Number(i.amount || 0), 0);
+    const caSum = items.filter(i => i.type === 'CASH ADVANCE').reduce((s, i) => s + Number(i.amount || 0), 0);
+    const paySum = items.filter(i => i.type === 'PAYMENT').reduce((s, i) => s + Number(i.amount || 0), 0);
+    const sumEl = document.getElementById('ep-review-sums');
+    if (sumEl) sumEl.innerHTML = '<span><b>Expenses:</b> P' + expSum.toFixed(2) + '</span> <span style="color:#ef4444"><b>Shortages:</b> P' + shortSum.toFixed(2) + '</span> <span style="color:#8b5cf6"><b>C.A.:</b> P' + caSum.toFixed(2) + '</span> <span style="color:#10b981"><b>Payments:</b> P' + paySum.toFixed(2) + '</span>';
+  }
+
+  updateReviewRow(idx, field, value) {
+    if (!this.pendingOcrResult || !this.pendingOcrResult.items[idx]) return;
+    const item = this.pendingOcrResult.items[idx];
+    if (field === 'amount') item.amount = parseFloat(value) || 0;
+    else if (field === 'type') {
+      item.type = value;
+      if (value === 'SHORT') {
+        item.classification = 'SHORT';
+        item.transactionType = 'SHORT_TELLER';
+        item.isShortage = true;
+        item.isExpense = false;
+        item.role = 'Teller';
+      } else if (value === 'CASH ADVANCE') {
+        item.classification = 'CA';
+        item.transactionType = 'CASH_ADVANCE';
+        item.isCashAdvance = true;
+        item.isExpense = false;
+        item.role = 'Collector';
+      } else if (value === 'PAYMENT') {
+        item.classification = 'PAYMENT';
+        item.transactionType = 'PAYMENT';
+        item.isExpense = false;
+      } else {
+        item.classification = 'OTHER';
+        item.transactionType = 'EXPENSE';
+        item.isExpense = true;
+      }
+    } else if (field === 'employee') item.employee = value;
+    else if (field === 'description') item.description = value;
+    else if (field === 'date') item.date = value;
+    else if (field === 'notes') item.notes = value;
+    this.renderReviewTable();
+  }
+
+  removeReviewRow(idx) {
+    if (!this.pendingOcrResult || !this.pendingOcrResult.items) return;
+    this.pendingOcrResult.items.splice(idx, 1);
+    this.renderReviewTable();
+  }
+
+  addReviewRow() {
+    if (!this.pendingOcrResult) this.pendingOcrResult = { items: [] };
+    this.pendingOcrResult.items.push({
+      id: 'OCR-MANUAL-' + Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      amount: 100.00,
+      description: 'Manual Added Entry',
+      employee: 'Staff Member',
+      role: 'Teller',
+      type: 'EXPENSE',
+      classification: 'OTHER',
+      transactionType: 'EXPENSE',
+      status: 'Verified',
+      notes: ''
+    });
+    this.renderReviewTable();
+  }
+
+  zoomImage(direction) {
+    const imgEl = document.getElementById('ep-review-modal-img');
+    if (!imgEl) return;
+    if (direction === 'in') this.zoomLevel = Math.min(3.0, this.zoomLevel + 0.25);
+    else if (direction === 'out') this.zoomLevel = Math.max(0.5, this.zoomLevel - 0.25);
+    else this.zoomLevel = 1;
+    imgEl.style.transform = 'scale(' + this.zoomLevel + ')';
+  }
+
+  // =========================================================================
+  // CONFIRM & SAVE (OCR)
+  // =========================================================================
+  confirmAndSave() {
+    if (!this.pendingOcrResult || !this.pendingOcrResult.items) return;
+    const invalid = this.pendingOcrResult.items.filter(i => i.type === 'CASH ADVANCE' && (i.role || '').toUpperCase().includes('TELLER'));
+    if (invalid.length > 0) {
+      alert('Policy Violation: TELLERS cannot have CASH ADVANCE records! Please change type or re-assign to a Collector.');
+      return;
+    }
     const store = window.appStore;
-    const docId = `DOC-YPAD-${Date.now().toString().slice(-6)}`;
+    if (!store) return;
+    const ts = Date.now();
+    const itemsToSave = this.pendingOcrResult.items.map((item, i) => {
+      const isShort = item.type === 'SHORT', isCA = item.type === 'CASH ADVANCE', isPay = item.type === 'PAYMENT';
+      let applyToCA = false, appliedTo = '';
+      if (isPay) {
+        if ((item.role || '').toUpperCase().includes('COLLECTOR')) {
+          applyToCA = true;
+          appliedTo = 'Cash Advance';
+        } else {
+          appliedTo = 'Short Teller';
+        }
+      }
+      return {
+        id: 'TXN-OCR-' + ts + '-' + i,
+        date: item.date || new Date().toISOString().split('T')[0],
+        amount: Number(item.amount) || 0,
+        description: item.description || 'OCR Entry',
+        name: item.employee || 'General',
+        employeeId: item.employeeId || '',
+        role: item.role || 'Staff',
+        boothCode: item.boothCode || '',
+        location: item.location || '',
+        note: item.notes || item.originalEntry || '',
+        classification: item.classification || (isShort ? 'SHORT' : (isCA ? 'CA' : (isPay ? 'PAYMENT' : 'OTHER'))),
+        type: item.type,
+        transactionType: item.transactionType || item.type,
+        isExpense: item.type === 'EXPENSE',
+        isShortage: isShort,
+        isCashAdvance: isCA,
+        applyToCA: applyToCA,
+        appliedTo: appliedTo,
+        verificationStatus: 'VERIFIED',
+        status: item.status || 'Verified'
+      };
+    });
 
-    // 1. Archive OCR Document
-    if (this.pendingOcrMetadata) {
-      store.addOcrDocument({
-        id: docId,
-        filename: this.pendingOcrMetadata.filename,
-        uploadedAt: new Date().toLocaleString(),
-        reportDate: this.pendingOcrMetadata.reportDate,
-        fingerprint: this.pendingOcrMetadata.fingerprint,
-        rawTextSnapshot: this.pendingOcrMetadata.rawTextSnapshot,
-        itemsCount: this.pendingOcrItems.length,
-        status: 'VERIFIED',
-        totalExpenses: this.pendingOcrMetadata.totalExpenses,
-        totalPayments: this.pendingOcrMetadata.totalPayments
+    store.data.transactions.push(...itemsToSave);
+    if (this.uploadedImageHash) {
+      if (!store.data.uploadedImageHashes) store.data.uploadedImageHashes = [];
+      store.data.uploadedImageHashes.push({
+        hash: this.uploadedImageHash,
+        date: new Date().toISOString().split('T')[0],
+        count: itemsToSave.length
       });
     }
+    store.save();
+    if (window.sfx) window.sfx.playChime();
+    this.closeReviewModal();
+    this.pendingOcrResult = null;
+    alert('Successfully saved ' + itemsToSave.length + ' entries into the system!');
+    this.render();
+  }
 
-    // 2. Insert transactions into store
-    this.pendingOcrItems.forEach((item, i) => {
-      const isCollector = (item.role || '').toUpperCase() === 'COLLECTOR';
-      const txn = {
-        id: `TXN-${Date.now().toString().slice(-4)}-${i + 1}`,
-        date: item.date || this.pendingOcrMetadata.reportDate || '2024-09-06',
-        amount: Number(item.amount),
-        description: item.description,
-        name: item.name || '-',
-        employeeId: item.employeeId || 'DDN005-GEN',
-        role: item.role || 'General',
-        boothCode: isCollector ? '' : (item.boothCode || ''),
-        location: item.location || 'Davao Del Norte',
-        datePeriodCover: item.datePeriodCover || '-',
-        note: item.note || 'Verified from OCR extraction',
-        classification: item.classification || 'OTHER',
-        applyToCA: item.applyToCA === true,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: docId,
-        ocrRawText: item.ocrRawText || item.description
-      };
-      store.addTransaction(txn);
+  deleteTransaction(txnId) {
+    this.showConfirmModal({
+      title: 'Delete Record?',
+      message: 'Are you sure you want to permanently delete this record? This action cannot be undone.',
+      yesText: 'YES, DELETE',
+      noText: 'NO, KEEP RECORD',
+      isDanger: true,
+      onConfirm: () => {
+        const store = window.appStore;
+        if (!store || !store.data || !store.data.transactions) return;
+        store.data.transactions = store.data.transactions.filter(t => t.id !== txnId);
+        store.save();
+        if (window.sfx) window.sfx.playChime();
+        this.render();
+      }
     });
-
-    store.addAuditLog({
-      eventType: 'OCR_BATCH_VERIFIED',
-      user: 'PJC (Supervisor)',
-      details: `Batch approved & verified ${this.pendingOcrItems.length} transactions from OCR extraction`,
-      recordId: docId
-    });
-
-    alert(`🎉 Successfully approved and verified ${this.pendingOcrItems.length} transactions into system master ledger!`);
-    window.closeModals();
-    this.switchTab('tab-main-table');
-  }
-
-  // Duplicate Modal Handlers
-  proceedDuplicateOcr() {
-    document.getElementById('modal-ep-duplicate').classList.remove('active');
-    this.showOcrReviewUI(null);
-  }
-
-  cancelDuplicateOcr() {
-    document.getElementById('modal-ep-duplicate').classList.remove('active');
-    window.closeModals();
-  }
-
-  // View OCR Snapshot from Archive
-  viewOcrSnapshot(docId) {
-    const doc = window.appStore.getOcrDocuments().find(d => d.id === docId);
-    if (!doc) return;
-    alert(`📄 OCR Snapshot for ${doc.filename}\nReport Date: ${doc.reportDate}\nStatus: ${doc.status}\n\nRaw Text:\n${doc.rawTextSnapshot.slice(0, 500)}...`);
   }
 
   // =========================================================================
-  // MANUAL ADD & EDIT TRANSACTION MODAL
+  // UNIVERSAL CONFIRMATION MODAL HELPER
   // =========================================================================
-  openAddModal() {
-    if (window.sfx) window.sfx.playClick();
-    this.editingTransactionId = null;
-    document.getElementById('ep-form-title').textContent = 'Record Financial Transaction';
-
-    const empSelect = document.getElementById('ep-form-emp');
-    const allStaff = [...window.appStore.getEmployees(), ...(window.appStore.data.relievers || [])];
-    empSelect.innerHTML = `
-      <option value="">-- Select Personnel (or leave for General) --</option>
-      ${allStaff.map(s => `<option value="${s.id}">${s.name} (${s.role})</option>`).join('')}
-    `;
-
-    document.getElementById('ep-form-date').value = new Date().toISOString().split('T')[0];
-    document.getElementById('ep-form-amount').value = '';
-    document.getElementById('ep-form-desc').value = '';
-    document.getElementById('ep-form-class').value = 'OTHER';
-    document.getElementById('ep-form-booth').value = '';
-    document.getElementById('ep-form-loc').value = '';
-    document.getElementById('ep-form-cover').value = '';
-    document.getElementById('ep-form-note').value = '';
-    document.getElementById('ep-form-apply-ca').checked = false;
-
-    this.onFormClassChange();
-    document.getElementById('modal-ep-form').classList.add('active');
-  }
-
-  openEditModal(id) {
-    if (window.sfx) window.sfx.playClick();
-    const txn = window.appStore.getTransactions().find(t => t.id === id);
-    if (!txn) return;
-
-    this.editingTransactionId = id;
-    document.getElementById('ep-form-title').textContent = `Edit Transaction (${id})`;
-
-    const empSelect = document.getElementById('ep-form-emp');
-    const allStaff = [...window.appStore.getEmployees(), ...(window.appStore.data.relievers || [])];
-    empSelect.innerHTML = `
-      <option value="">-- Select Personnel (or leave for General) --</option>
-      ${allStaff.map(s => `<option value="${s.id}" ${s.id === txn.employeeId ? 'selected' : ''}>${s.name} (${s.role})</option>`).join('')}
-    `;
-
-    document.getElementById('ep-form-date').value = txn.date || '';
-    document.getElementById('ep-form-amount').value = txn.amount || '';
-    document.getElementById('ep-form-desc').value = txn.description || '';
-    document.getElementById('ep-form-class').value = txn.classification || 'OTHER';
-    document.getElementById('ep-form-booth').value = txn.boothCode || '';
-    document.getElementById('ep-form-loc').value = txn.location || '';
-    document.getElementById('ep-form-cover').value = txn.datePeriodCover || '';
-    document.getElementById('ep-form-note').value = txn.note || '';
-    document.getElementById('ep-form-apply-ca').checked = txn.applyToCA === true;
-
-    this.onFormClassChange();
-    document.getElementById('modal-ep-form').classList.add('active');
-  }
-
-  onFormClassChange() {
-    const classVal = document.getElementById('ep-form-class').value;
-    const applyCaContainer = document.getElementById('ep-form-apply-ca-container');
-    if (applyCaContainer) {
-      applyCaContainer.style.display = (classVal === 'PAYMENT') ? 'block' : 'none';
-    }
-
-    // Role check for Collector rule
-    this.onFormEmpChange();
-  }
-
-  onFormEmpChange() {
-    const empId = document.getElementById('ep-form-emp').value;
-    const boothInput = document.getElementById('ep-form-booth');
-    const locInput = document.getElementById('ep-form-loc');
-    const allStaff = [...window.appStore.getEmployees(), ...(window.appStore.data.relievers || [])];
-    const staff = allStaff.find(s => s.id === empId);
-
-    if (staff) {
-      const isCollector = (staff.role || '').toUpperCase() === 'COLLECTOR';
-      if (isCollector) {
-        boothInput.value = '';
-        boothInput.disabled = true;
-        boothInput.placeholder = 'N/A (Collector Rule: No Booth Code)';
+  showConfirmModal({ title, message, yesText, noText, isDanger, onConfirm, onCancel }) {
+    const modal = document.getElementById('modal-ep-confirm');
+    if (!modal) {
+      if (window.confirm(message)) {
+        if (onConfirm) onConfirm();
       } else {
-        boothInput.disabled = false;
-        boothInput.placeholder = 'e.g. DDN-762';
-        if (!boothInput.value) boothInput.value = staff.boothCode || '';
+        if (onCancel) onCancel();
       }
-      if (!locInput.value) {
-        locInput.value = staff.municipality || staff.address || '';
-      }
-    } else {
-      boothInput.disabled = false;
-      boothInput.placeholder = 'e.g. DDN-762';
-    }
-  }
-
-  saveTransactionForm() {
-    const amount = parseFloat(document.getElementById('ep-form-amount').value);
-    const desc = document.getElementById('ep-form-desc').value.trim();
-    const date = document.getElementById('ep-form-date').value;
-    const classification = document.getElementById('ep-form-class').value;
-    const empId = document.getElementById('ep-form-emp').value;
-
-    if (!amount || isNaN(amount) || !desc || !date) {
-      alert('Please fill in Date, Amount, and Description.');
       return;
     }
+    const titleEl = document.getElementById('ep-confirm-title');
+    const msgEl = document.getElementById('ep-confirm-message');
+    const yesBtn = document.getElementById('ep-confirm-yes-btn');
+    const noBtn = document.getElementById('ep-confirm-no-btn');
 
-    const allStaff = [...window.appStore.getEmployees(), ...(window.appStore.data.relievers || [])];
-    const staff = allStaff.find(s => s.id === empId);
-    const isCollector = staff ? (staff.role || '').toUpperCase() === 'COLLECTOR' : false;
-
-    const payload = {
-      date: date,
-      amount: amount,
-      description: desc,
-      classification: classification,
-      employeeId: empId || (staff ? staff.id : 'DDN005-GEN'),
-      name: staff ? staff.name : (empId ? empId : 'General Operating'),
-      role: staff ? staff.role : 'General',
-      boothCode: isCollector ? '' : (document.getElementById('ep-form-booth').value.trim()),
-      location: document.getElementById('ep-form-loc').value.trim() || 'Davao Del Norte',
-      datePeriodCover: document.getElementById('ep-form-cover').value.trim() || date,
-      note: document.getElementById('ep-form-note').value.trim() || '-',
-      applyToCA: classification === 'PAYMENT' ? document.getElementById('ep-form-apply-ca').checked : false,
-      verificationStatus: 'VERIFIED'
-    };
-
-    if (this.editingTransactionId) {
-      window.appStore.updateTransaction(this.editingTransactionId, payload);
-    } else {
-      window.appStore.addTransaction(payload);
+    if (titleEl) titleEl.textContent = title || 'Confirm Action';
+    if (msgEl) msgEl.textContent = message || '';
+    if (yesBtn) {
+      yesBtn.textContent = yesText || 'YES';
+      if (isDanger) {
+        yesBtn.style.background = '#ef4444';
+        yesBtn.style.borderColor = '#ef4444';
+        yesBtn.style.color = '#ffffff';
+      } else {
+        yesBtn.style.background = 'var(--accent-gold)';
+        yesBtn.style.borderColor = 'var(--accent-gold)';
+        yesBtn.style.color = '#000000';
+      }
+    }
+    if (noBtn) {
+      noBtn.textContent = noText || 'NO';
     }
 
-    if (window.sfx) window.sfx.playChime();
-    window.closeModals();
+    this._confirmCallback = onConfirm;
+    this._confirmCancelCallback = onCancel;
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+
+  executeConfirmAction() {
+    const cb = this._confirmCallback;
+    this.closeConfirmModal();
+    if (cb) cb();
+  }
+
+  cancelConfirmAction() {
+    const cb = this._confirmCancelCallback;
+    this.closeConfirmModal();
+    if (cb) cb();
+  }
+
+  closeConfirmModal() {
+    const modal = document.getElementById('modal-ep-confirm');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
+    this._confirmCallback = null;
+    this._confirmCancelCallback = null;
+  }
+
+  // =========================================================================
+  // RENDERING
+  // =========================================================================
+  render() {
+    this.updateKpiCounters();
     this.renderCurrentTab();
   }
 
-  deleteEntry(id) {
-    if (confirm(`Are you sure you want to delete transaction ${id}?`)) {
-      if (window.sfx) window.sfx.playClick();
-      window.appStore.deleteTransaction(id);
-      this.renderCurrentTab();
+  updateKpiCounters() {
+    const store = window.appStore;
+    const txns = store ? (store.data.transactions || []) : [];
+    let exp = 0, short = 0, ca = 0, pay = 0;
+    txns.forEach(t => {
+      const a = Number(t.amount) || 0;
+      if (t.classification === 'OTHER' || t.type === 'EXPENSE' || t.isExpense) exp += a;
+      else if (t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'))) short += a;
+      else if (t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'))) ca += a;
+      else if (t.classification === 'PAYMENT' || t.type === 'PAYMENT') pay += a;
+    });
+    const fmt = v => 'P' + v.toLocaleString('en-US', { minimumFractionDigits: 2 });
+    const e1 = document.getElementById('ep-kpi-expenses'); if (e1) e1.textContent = fmt(exp);
+    const e2 = document.getElementById('ep-kpi-short'); if (e2) e2.textContent = fmt(short);
+    const e3 = document.getElementById('ep-kpi-ca'); if (e3) e3.textContent = fmt(ca);
+    const e4 = document.getElementById('ep-kpi-payments'); if (e4) e4.textContent = fmt(pay);
+  }
+
+  renderCurrentTab() {
+    if (this.activeTab === 'expenses') this.renderExpensesTab();
+    else if (this.activeTab === 'short-tracker') this.renderShortTrackerTab();
+    else if (this.activeTab === 'ca-tracker') this.renderCashAdvanceTrackerTab();
+    else if (this.activeTab === 'payment-history') this.renderPaymentHistoryTab();
+  }
+
+  // =========================================================================
+  // TAB 1: OPERATING EXPENSES — pagination + ACTION (Edit / Delete)
+  // =========================================================================
+  renderExpensesTab() {
+    const store = window.appStore;
+    const txns = store ? (store.data.transactions || []) : [];
+    const q = this.searchQuery.toLowerCase();
+    const filtered = txns.filter(t => {
+      if (!(t.classification === 'OTHER' || t.type === 'EXPENSE' || t.isExpense)) return false;
+      if (!q) return true;
+      return (
+        (t.description && t.description.toLowerCase().includes(q)) ||
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.boothCode && t.boothCode.toLowerCase().includes(q)) ||
+        (t.location && t.location.toLowerCase().includes(q)) ||
+        (t.date && t.date.toLowerCase().includes(q)) ||
+        (t.note && t.note.toLowerCase().includes(q)) ||
+        String(t.amount).includes(q)
+      );
+    });
+
+    const total = filtered.length, ps = this.expensesPageSize, tp = Math.max(1, Math.ceil(total / ps));
+    if (this.expensesPage > tp) this.expensesPage = tp;
+    const start = (this.expensesPage - 1) * ps;
+    const pg = filtered.slice(start, start + ps);
+    const tbody = document.getElementById('ep-expenses-tbody');
+    if (!tbody) return;
+
+    if (pg.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--text-muted);">No operating expenses found' +
+        (this.searchQuery ? ' matching "' + this.escapeHtml(this.searchQuery) + '"' : '') + '</td></tr>';
+    } else {
+      tbody.innerHTML = pg.map((t, i) =>
+        '<tr>' +
+        '<td style="text-align:center;font-weight:700;color:var(--text-muted);">' + (start + i + 1) + '</td>' +
+        '<td style="font-weight:600;">' + this.escapeHtml(t.date || '') + '</td>' +
+        '<td style="font-weight:700;">' + this.escapeHtml(t.description || 'Expense') + '</td>' +
+        '<td><div style="font-weight:600;">' + this.escapeHtml(t.name || 'HQ base') + '</div><div style="font-size:11px;color:var(--text-muted);">' + this.escapeHtml(t.role || 'Staff') + (t.boothCode ? ' [' + t.boothCode + ']' : '') + '</div></td>' +
+        '<td><span class="badge badge-secondary" style="font-size:11px;">' + this.escapeHtml(t.location || 'Davao Sector') + '</span></td>' +
+        '<td style="font-weight:800;color:var(--accent-gold);text-align:right;">P' + Number(t.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>' +
+        '<td style="font-size:11.5px;color:var(--text-muted);">' + this.escapeHtml(t.note || 'Verified ledger entry') + '</td>' +
+        '<td style="text-align:center; white-space:nowrap;">' +
+        '<button type="button" class="btn btn-secondary btn-xs ep-btn-edit" data-ep-action="edit" data-id="' + t.id + '" data-section="expense" onclick="window.expensesPayment.openEditModal(\'' + t.id + '\', \'expense\')" style="color:var(--accent-gold);border-color:var(--accent-gold);font-size:11px;padding:3px 8px;margin-right:4px;cursor:pointer;">Edit</button>' +
+        '<button type="button" class="btn btn-secondary btn-xs ep-btn-delete" data-ep-action="delete" data-id="' + t.id + '" data-section="expense" onclick="window.expensesPayment.onDeleteExpenseClicked(\'' + t.id + '\')" style="color:#ef4444;border-color:rgba(239,68,68,0.4);font-size:11px;padding:3px 8px;cursor:pointer;">Delete</button>' +
+        '</td>' +
+        '</tr>'
+      ).join('');
+    }
+    this.renderPagination('ep-expenses-pagination', total, this.expensesPage, ps, 'expenses');
+  }
+
+  onDeleteExpenseClicked(txnId) {
+    this.deleteTransaction(txnId);
+  }
+
+  // =========================================================================
+  // TAB 2: SHORT TRACKER (TELLERS) — Ledger History & Balance Sync
+  // =========================================================================
+  renderShortTrackerTab() {
+    const store = window.appStore;
+    if (!store) return;
+    this.populateTellerSelect();
+
+    const name = this.selectedTeller;
+    const txns = store.data.transactions || [];
+    const qU = name.toUpperCase();
+
+    const ttxns = txns.filter(t => {
+      if (!t.name) return false;
+      const tU = t.name.toUpperCase();
+      const match = tU.includes(qU) || qU.includes(tU);
+      if (!match) return false;
+      const isShort = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
+      const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && !t.applyToCA;
+      return isShort || isPy;
+    }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    let activeOrigShort = 0, activePaid = 0;
+    ttxns.forEach(t => {
+      const a = Number(t.amount) || 0;
+      const isShort = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
+      if (isShort) activeOrigShort += a;
+      else activePaid += a;
+    });
+    const activeRem = Math.max(0, activeOrigShort - activePaid);
+    const activeFull = activeOrigShort > 0 && activeRem === 0;
+
+    let runningShort = 0, runningPaid = 0;
+    const rows = [];
+    ttxns.forEach(t => {
+      const a = Number(t.amount) || 0;
+      const isShort = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
+      if (isShort) {
+        runningShort += a;
+      } else {
+        runningPaid += a;
+      }
+      const remBalance = Math.max(0, runningShort - runningPaid);
+      
+      let settlementStatus;
+      if (remBalance === 0 && runningShort > 0) {
+        settlementStatus = 'Fully Paid';
+      } else if (runningPaid > 0 && remBalance > 0) {
+        settlementStatus = 'Partially Paid';
+      } else if (runningShort > 0) {
+        settlementStatus = 'Pending';
+      } else {
+        settlementStatus = t.settlement || 'Fully Paid';
+      }
+
+      rows.push({
+        id: t.id,
+        date: t.date,
+        transaction: isShort ? 'SHORT' : 'PAYMENT',
+        amount: a,
+        remaining: remBalance,
+        note: t.note || (isShort ? 'Teller Shortage' : 'Payment against Shortage'),
+        isShort: isShort,
+        settlement: settlementStatus
+      });
+    });
+
+    const fmt = v => 'P' + v.toLocaleString('en-US', { minimumFractionDigits: 2 });
+    const n = document.getElementById('ep-short-teller-name'); if (n) n.textContent = name;
+    const o = document.getElementById('ep-short-original-amt'); if (o) o.textContent = fmt(activeOrigShort);
+    const p = document.getElementById('ep-short-total-paid'); if (p) p.textContent = fmt(activePaid);
+    const r = document.getElementById('ep-short-remaining'); if (r) r.textContent = fmt(activeRem);
+
+    const sb = document.getElementById('ep-short-status-badge');
+    if (sb) {
+      if (activeOrigShort === 0) {
+        sb.className = 'badge badge-secondary';
+        sb.textContent = 'NO SHORTAGES';
+        sb.removeAttribute('style');
+      } else if (activeFull) {
+        sb.className = 'badge badge-success';
+        sb.style.cssText = 'background:#10b981;color:#fff;';
+        sb.textContent = 'STATUS: FULLY PAID';
+      } else {
+        sb.className = 'badge badge-warning';
+        sb.style.cssText = 'background:#f59e0b;color:#fff;';
+        sb.textContent = 'STATUS: PARTIALLY PAID';
+      }
+    }
+
+    const activeCalendarTxns = ttxns;
+    this.renderCalendarGrid('ep-short-calendar-container', activeCalendarTxns, 'SHORT');
+
+    const totalRows = rows.length;
+    const ps = this.shortLedgerPageSize;
+    const tp = Math.max(1, Math.ceil(totalRows / ps));
+    if (this.shortLedgerPage > tp) this.shortLedgerPage = tp;
+    const start = (this.shortLedgerPage - 1) * ps;
+    const pageRows = rows.slice(start, start + ps);
+
+    const tb = document.getElementById('ep-short-history-tbody');
+    if (tb) {
+      if (totalRows === 0) {
+        tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);">No records found for ' + this.escapeHtml(name) + '</td></tr>';
+      } else {
+        tb.innerHTML = pageRows.map(row => {
+          let badgeColor = '#f59e0b';
+          if (row.settlement === 'Fully Paid') badgeColor = '#10b981';
+          else if (row.settlement === 'Pending') badgeColor = '#ef4444';
+
+          const actionHtml =
+            '<button type="button" class="btn btn-secondary btn-xs ep-btn-edit" data-ep-action="edit" data-id="' + row.id + '" data-section="short" onclick="window.expensesPayment.openEditModal(\'' + row.id + '\', \'short\')" style="color:var(--accent-gold);border-color:var(--accent-gold);font-size:11px;padding:3px 8px;margin-right:4px;cursor:pointer;">Edit</button>' +
+            '<button type="button" class="btn btn-secondary btn-xs ep-btn-delete" data-ep-action="delete" data-id="' + row.id + '" data-section="short" onclick="window.expensesPayment.onDeleteShortClicked(\'' + row.id + '\')" style="color:#ef4444;border-color:rgba(239,68,68,0.4);font-size:11px;padding:3px 8px;cursor:pointer;">Delete</button>';
+
+          return '<tr style="' + (row.remaining === 0 && !row.isShort ? 'background:rgba(16,185,129,0.06);' : '') + '">' +
+            '<td style="font-weight:700;">' + this.escapeHtml(row.date) + '</td>' +
+            '<td><span class="badge" style="' + (row.isShort ? 'background:#ef4444;' : 'background:#10b981;') + 'color:#fff;">' + row.transaction + '</span></td>' +
+            '<td style="font-weight:800;text-align:right;color:' + (row.isShort ? '#ef4444' : '#10b981') + ';">P' + row.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>' +
+            '<td style="font-weight:800;text-align:right;color:' + (row.remaining === 0 ? '#10b981' : 'var(--accent-gold)') + ';">P' + row.remaining.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>' +
+            '<td style="font-size:11.5px;color:var(--text-muted);">' + this.escapeHtml(row.note) + '</td>' +
+            '<td style="text-align:center;"><span class="badge" style="background:' + badgeColor + ';color:#fff;font-size:10px;">' + this.escapeHtml(row.settlement) + '</span></td>' +
+            '<td style="text-align:center; white-space:nowrap;">' + actionHtml + '</td>' +
+            '</tr>';
+        }).join('');
+      }
+    }
+
+    this.renderPagination('ep-short-pagination', totalRows, this.shortLedgerPage, ps, 'short');
+  }
+
+  onDeleteShortClicked(txnId) {
+    this.deleteTransaction(txnId);
+  }
+
+  // =========================================================================
+  // TAB 3: CASH ADVANCE TRACKER (COLLECTORS) — Ledger History & Balance Sync
+  // =========================================================================
+  renderCashAdvanceTrackerTab() {
+    const store = window.appStore;
+    if (!store) return;
+    this.populateCollectorSelect();
+
+    const name = this.selectedCollector;
+    const txns = store.data.transactions || [];
+    const qN = name.toLowerCase();
+
+    const ctxns = txns.filter(t => {
+      if (!t.name) return false;
+      const match = t.name.toLowerCase().includes(qN) || qN.includes(t.name.toLowerCase());
+      if (!match) return false;
+      const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
+      const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && t.applyToCA;
+      return isCA || isPy;
+    }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    let activeOrigCA = 0, activePaid = 0;
+    ctxns.forEach(t => {
+      const a = Number(t.amount) || 0;
+      const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
+      if (isCA) activeOrigCA += a;
+      else activePaid += a;
+    });
+    const activeRem = Math.max(0, activeOrigCA - activePaid);
+    const activeFull = activeOrigCA > 0 && activeRem === 0;
+
+    let runningCA = 0, runningPaid = 0;
+    const rows = [];
+    ctxns.forEach(t => {
+      const a = Number(t.amount) || 0;
+      const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
+      if (isCA) runningCA += a;
+      else runningPaid += a;
+      const remBalance = Math.max(0, runningCA - runningPaid);
+
+      let settlementStatus;
+      if (remBalance === 0 && runningCA > 0) {
+        settlementStatus = 'Fully Paid';
+      } else if (runningPaid > 0 && remBalance > 0) {
+        settlementStatus = 'Partially Paid';
+      } else if (runningCA > 0) {
+        settlementStatus = 'Pending';
+      } else {
+        settlementStatus = t.settlement || 'Fully Paid';
+      }
+
+      rows.push({
+        id: t.id,
+        date: t.date,
+        transaction: isCA ? 'CASH ADVANCE' : 'PAYMENT',
+        amount: a,
+        remaining: remBalance,
+        note: t.note || (isCA ? 'Collector Field Operational Advance' : 'Payment against Cash Advance'),
+        isCA: isCA,
+        settlement: settlementStatus
+      });
+    });
+
+    const fmt = v => 'P' + v.toLocaleString('en-US', { minimumFractionDigits: 2 });
+    const n = document.getElementById('ep-ca-collector-name'); if (n) n.textContent = name;
+    const o = document.getElementById('ep-ca-original-amt'); if (o) o.textContent = fmt(activeOrigCA);
+    const p = document.getElementById('ep-ca-total-paid'); if (p) p.textContent = fmt(activePaid);
+    const r = document.getElementById('ep-ca-remaining'); if (r) r.textContent = fmt(activeRem);
+
+    const sb = document.getElementById('ep-ca-status-badge');
+    if (sb) {
+      if (activeOrigCA === 0) {
+        sb.className = 'badge badge-secondary';
+        sb.textContent = 'NO CASH ADVANCE';
+        sb.removeAttribute('style');
+      } else if (activeFull) {
+        sb.className = 'badge badge-success';
+        sb.style.cssText = 'background:#10b981;color:#fff;';
+        sb.textContent = 'STATUS: FULLY PAID';
+      } else {
+        sb.className = 'badge badge-warning';
+        sb.style.cssText = 'background:#f59e0b;color:#fff;';
+        sb.textContent = 'STATUS: PARTIALLY PAID';
+      }
+    }
+
+    const activeCalendarTxns = ctxns;
+    this.renderCalendarGrid('ep-ca-calendar-container', activeCalendarTxns, 'CA');
+
+    const totalRows = rows.length;
+    const ps = this.caLedgerPageSize;
+    const tp = Math.max(1, Math.ceil(totalRows / ps));
+    if (this.caLedgerPage > tp) this.caLedgerPage = tp;
+    const start = (this.caLedgerPage - 1) * ps;
+    const pageRows = rows.slice(start, start + ps);
+
+    const tb = document.getElementById('ep-ca-history-tbody');
+    if (tb) {
+      if (totalRows === 0) {
+        tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);">No records found for ' + this.escapeHtml(name) + '</td></tr>';
+      } else {
+        tb.innerHTML = pageRows.map(row => {
+          let badgeColor = '#f59e0b';
+          if (row.settlement === 'Fully Paid') badgeColor = '#10b981';
+          else if (row.settlement === 'Pending') badgeColor = '#ef4444';
+
+          const actionHtml =
+            '<button type="button" class="btn btn-secondary btn-xs ep-btn-edit" data-ep-action="edit" data-id="' + row.id + '" data-section="ca" onclick="window.expensesPayment.openEditModal(\'' + row.id + '\', \'ca\')" style="color:var(--accent-gold);border-color:var(--accent-gold);font-size:11px;padding:3px 8px;margin-right:4px;cursor:pointer;">Edit</button>' +
+            '<button type="button" class="btn btn-secondary btn-xs ep-btn-delete" data-ep-action="delete" data-id="' + row.id + '" data-section="ca" onclick="window.expensesPayment.onDeleteCAClicked(\'' + row.id + '\')" style="color:#ef4444;border-color:rgba(239,68,68,0.4);font-size:11px;padding:3px 8px;cursor:pointer;">Delete</button>';
+
+          return '<tr style="' + (row.remaining === 0 && !row.isCA ? 'background:rgba(16,185,129,0.06);' : '') + '">' +
+            '<td style="font-weight:700;">' + this.escapeHtml(row.date) + '</td>' +
+            '<td><span class="badge" style="' + (row.isCA ? 'background:#8b5cf6;' : 'background:#10b981;') + 'color:#fff;">' + row.transaction + '</span></td>' +
+            '<td style="font-weight:800;text-align:right;color:' + (row.isCA ? '#8b5cf6' : '#10b981') + ';">P' + row.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>' +
+            '<td style="font-weight:800;text-align:right;color:' + (row.remaining === 0 ? '#10b981' : 'var(--accent-gold)') + ';">P' + row.remaining.toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>' +
+            '<td style="font-size:11.5px;color:var(--text-muted);">' + this.escapeHtml(row.note) + '</td>' +
+            '<td style="text-align:center;"><span class="badge" style="background:' + badgeColor + ';color:#fff;font-size:10px;">' + this.escapeHtml(row.settlement) + '</span></td>' +
+            '<td style="text-align:center; white-space:nowrap;">' + actionHtml + '</td>' +
+            '</tr>';
+        }).join('');
+      }
+    }
+
+    this.renderPagination('ep-ca-pagination', totalRows, this.caLedgerPage, ps, 'ca');
+  }
+
+  onDeleteCAClicked(txnId) {
+    this.deleteTransaction(txnId);
+  }
+
+  // =========================================================================
+  // TAB 4: MASTER PAYMENT HISTORY — pagination + ACTION (Edit / Delete)
+  // =========================================================================
+  renderPaymentHistoryTab() {
+    const store = window.appStore;
+    const txns = store ? (store.data.transactions || []) : [];
+    const q = this.searchQuery.toLowerCase();
+
+    const payments = txns.filter(t => {
+      if (!(t.classification === 'PAYMENT' || t.type === 'PAYMENT')) return false;
+      if (!q) return true;
+      return (
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.role && t.role.toLowerCase().includes(q)) ||
+        (t.date && t.date.toLowerCase().includes(q)) ||
+        (t.appliedTo && t.appliedTo.toLowerCase().includes(q)) ||
+        (t.note && t.note.toLowerCase().includes(q)) ||
+        String(t.amount).includes(q)
+      );
+    }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    const total = payments.length, ps = this.paymentsPageSize, tp = Math.max(1, Math.ceil(total / ps));
+    if (this.paymentsPage > tp) this.paymentsPage = tp;
+    const start = (this.paymentsPage - 1) * ps;
+    const pg = payments.slice(start, start + ps);
+
+    const tbody = document.getElementById('ep-payments-tbody');
+    if (!tbody) return;
+
+    if (pg.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--text-muted);">No payment records found' +
+        (this.searchQuery ? ' matching "' + this.escapeHtml(this.searchQuery) + '"' : '') + '</td></tr>';
+    } else {
+      tbody.innerHTML = pg.map((t, i) => {
+        const isCA = t.applyToCA || (t.appliedTo && t.appliedTo.toUpperCase().includes('ADVANCE'));
+        const statusText = t.settlement || 'CREDITED';
+        return '<tr>' +
+          '<td style="text-align:center;font-weight:700;color:var(--text-muted);">' + (start + i + 1) + '</td>' +
+          '<td style="font-weight:700;">' + this.escapeHtml(t.date || '') + '</td>' +
+          '<td><div style="font-weight:800;">' + this.escapeHtml(t.name || 'Personnel') + '</div><div style="font-size:11px;color:var(--text-muted);">' + this.escapeHtml(t.role || 'Staff') + (t.boothCode ? ' ' + t.boothCode : '') + '</div></td>' +
+          '<td><span class="badge" style="' + (isCA ? 'background:#8b5cf6;' : 'background:#ef4444;') + 'color:#fff;font-size:11px;">' + (isCA ? 'Cash Advance Payment' : 'Short Teller Payment') + '</span></td>' +
+          '<td style="font-weight:800;color:#10b981;text-align:right;">P' + Number(t.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 }) + '</td>' +
+          '<td style="font-size:11.5px;color:var(--text-muted);">' + this.escapeHtml(t.note || 'Receipt acknowledged') + '</td>' +
+          '<td style="text-align:center;"><span class="badge" style="background:#10b981;color:#fff;font-size:10px;">' + this.escapeHtml(statusText) + '</span></td>' +
+          '<td style="text-align:center; white-space:nowrap;">' +
+          '<button type="button" class="btn btn-secondary btn-xs ep-btn-edit" data-ep-action="edit" data-id="' + t.id + '" data-section="payment" onclick="window.expensesPayment.openEditModal(\'' + t.id + '\', \'payment\')" style="color:var(--accent-gold);border-color:var(--accent-gold);font-size:11px;padding:3px 8px;margin-right:4px;cursor:pointer;">Edit</button>' +
+          '<button type="button" class="btn btn-secondary btn-xs ep-btn-delete" data-ep-action="delete" data-id="' + t.id + '" data-section="payment" onclick="window.expensesPayment.onDeletePaymentClicked(\'' + t.id + '\')" style="color:#ef4444;border-color:rgba(239,68,68,0.4);font-size:11px;padding:3px 8px;cursor:pointer;">Delete</button>' +
+          '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    this.renderPagination('ep-payments-pagination', total, this.paymentsPage, ps, 'payments');
+  }
+
+  onDeletePaymentClicked(txnId) {
+    this.deleteTransaction(txnId);
+  }
+
+  // =========================================================================
+  // PAGINATION COMPONENT & HANDLERS
+  // =========================================================================
+  renderPagination(containerId, total, currentPage, pageSize, type) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const tp = Math.max(1, Math.ceil(total / pageSize));
+    const sizes = [10, 25, 50, 100];
+    let pageButtons = '';
+    const maxV = 5;
+    const sp = Math.max(1, currentPage - Math.floor(maxV / 2));
+    const ep = Math.min(tp, sp + maxV - 1);
+    const sp2 = Math.max(1, ep - maxV + 1);
+
+    if (sp2 > 1) {
+      pageButtons += '<button class="ep-page-btn" onclick="window.expensesPayment.goToPage(\'' + type + '\', 1)">1</button>';
+      if (sp2 > 2) pageButtons += '<span style="padding:0 4px;color:var(--text-muted)">...</span>';
+    }
+
+    for (let pp = sp2; pp <= ep; pp++) {
+      pageButtons += '<button class="ep-page-btn' + (pp === currentPage ? ' active' : '') + '" onclick="window.expensesPayment.goToPage(\'' + type + '\', ' + pp + ')">' + pp + '</button>';
+    }
+
+    if (ep < tp) {
+      if (ep < tp - 1) pageButtons += '<span style="padding:0 4px;color:var(--text-muted)">...</span>';
+      pageButtons += '<button class="ep-page-btn" onclick="window.expensesPayment.goToPage(\'' + type + '\', ' + tp + ')">' + tp + '</button>';
+    }
+
+    const sOpts = sizes.map(s => '<option value="' + s + '"' + (s === pageSize ? ' selected' : '') + '>' + s + '</option>').join('');
+    const showing = total === 0 ? 'No records' : ((currentPage - 1) * pageSize + 1) + '-' + Math.min(currentPage * pageSize, total) + ' of ' + total + ' records';
+
+    container.innerHTML =
+      '<div class="ep-pagination-bar">' +
+      '<div class="ep-pagination-left">' +
+      '<span style="font-size:12.5px;color:var(--text-muted);font-weight:600;">Rows per page:</span>' +
+      '<select class="form-select" style="width:70px;font-size:12.5px;padding:4px 8px;" onchange="window.expensesPayment.changePageSize(\'' + type + '\', parseInt(this.value))">' + sOpts + '</select>' +
+      '<span style="font-size:12.5px;color:var(--text-muted);margin-left:8px;">' + showing + '</span>' +
+      '</div>' +
+      '<div class="ep-pagination-right">' +
+      '<span style="font-size:12.5px;color:var(--text-muted);font-weight:600;margin-right:6px;">Page ' + currentPage + ' of ' + tp + '</span>' +
+      '<button class="ep-page-btn ep-page-nav" onclick="window.expensesPayment.goToPage(\'' + type + '\', ' + (currentPage - 1) + ')"' + (currentPage <= 1 ? ' disabled' : '') + '>&#8249;</button>' +
+      pageButtons +
+      '<button class="ep-page-btn ep-page-nav" onclick="window.expensesPayment.goToPage(\'' + type + '\', ' + (currentPage + 1) + ')"' + (currentPage >= tp ? ' disabled' : '') + '>&#8250;</button>' +
+      '</div>' +
+      '</div>';
+  }
+
+  goToPage(type, page) {
+    const store = window.appStore, txns = store ? (store.data.transactions || []) : [];
+    if (type === 'expenses') {
+      const tp = Math.max(1, Math.ceil(txns.filter(t => (t.classification === 'OTHER' || t.type === 'EXPENSE' || t.isExpense)).length / this.expensesPageSize));
+      this.expensesPage = Math.max(1, Math.min(page, tp));
+      this.renderExpensesTab();
+    } else if (type === 'short') {
+      this.shortLedgerPage = Math.max(1, page);
+      this.renderShortTrackerTab();
+    } else if (type === 'ca') {
+      this.caLedgerPage = Math.max(1, page);
+      this.renderCashAdvanceTrackerTab();
+    } else if (type === 'payments') {
+      const tp = Math.max(1, Math.ceil(txns.filter(t => (t.classification === 'PAYMENT' || t.type === 'PAYMENT')).length / this.paymentsPageSize));
+      this.paymentsPage = Math.max(1, Math.min(page, tp));
+      this.renderPaymentHistoryTab();
+    }
+  }
+
+  changePageSize(type, size) {
+    if (type === 'expenses') {
+      this.expensesPageSize = size;
+      this.expensesPage = 1;
+      this.renderExpensesTab();
+    } else if (type === 'short') {
+      this.shortLedgerPageSize = size;
+      this.shortLedgerPage = 1;
+      this.renderShortTrackerTab();
+    } else if (type === 'ca') {
+      this.caLedgerPageSize = size;
+      this.caLedgerPage = 1;
+      this.renderCashAdvanceTrackerTab();
+    } else if (type === 'payments') {
+      this.paymentsPageSize = size;
+      this.paymentsPage = 1;
+      this.renderPaymentHistoryTab();
     }
   }
 
   // =========================================================================
-  // EXPORT TO EXCEL (Accounting Spreadsheet via ExcelJS)
+  // CALENDAR RENDERER
   // =========================================================================
-  async exportToExcel() {
-    if (typeof ExcelJS === 'undefined') {
-      alert('Excel export engine is initializing. Please retry in a few seconds.');
+  renderCalendarGrid(containerId, personTxns, trackerType) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const yr = this.currentCalendarYear, mo = this.currentCalendarMonth;
+    const mNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const dim = new Date(yr, mo + 1, 0).getDate(), fdi = new Date(yr, mo, 1).getDay(), sOff = (fdi + 6) % 7;
+    const dayMap = {};
+
+    personTxns.forEach(t => {
+      if (!t.date) return;
+      const parts = t.date.split('-');
+      if (parts.length === 3 && parseInt(parts[0]) === yr && parseInt(parts[1]) === mo + 1) {
+        const d = parseInt(parts[2]);
+        if (!dayMap[d]) dayMap[d] = [];
+        dayMap[d].push(t);
+      }
+    });
+
+    let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:6px;">' +
+      '<div style="font-size:16px;font-weight:800;color:var(--accent-gold);">' + mNames[mo] + ' ' + yr + '</div>' +
+      '<div style="display:flex;gap:6px;">' +
+      '<button class="btn btn-secondary btn-xs" onclick="window.expensesPayment.changeMonth(-1, \'' + containerId + '\', \'' + trackerType + '\')">Prev</button>' +
+      '<button class="btn btn-secondary btn-xs" onclick="window.expensesPayment.resetMonth(\'' + containerId + '\', \'' + trackerType + '\')">Today</button>' +
+      '<button class="btn btn-secondary btn-xs" onclick="window.expensesPayment.changeMonth(1, \'' + containerId + '\', \'' + trackerType + '\')">Next</button>' +
+      '</div></div>';
+
+    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;font-size:12px;">';
+    ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].forEach(d => {
+      html += '<div style="text-align:center;font-weight:800;color:var(--text-muted);padding:6px 0;">' + d + '</div>';
+    });
+
+    for (let i = 0; i < sOff; i++) {
+      html += '<div style="min-height:76px;background:rgba(0,0,0,0.1);border:1px dashed rgba(255,255,255,0.05);border-radius:4px;"></div>';
+    }
+
+    for (let day = 1; day <= dim; day++) {
+      const txs = dayMap[day] || [], has = txs.length > 0;
+      let pills = '';
+      txs.forEach(t => {
+        const isSh = t.classification === 'SHORT' || t.type === 'SHORT';
+        const isCA2 = t.classification === 'CA' || t.type === 'CASH ADVANCE';
+        const isPy = t.classification === 'PAYMENT' || t.type === 'PAYMENT';
+        if (isSh) pills += '<div style="background:#ef4444;color:#fff;font-size:10px;font-weight:800;padding:2px 4px;border-radius:3px;margin-top:2px;">SHORT P' + Number(t.amount).toLocaleString() + '</div>';
+        else if (isCA2) pills += '<div style="background:#8b5cf6;color:#fff;font-size:10px;font-weight:800;padding:2px 4px;border-radius:3px;margin-top:2px;">C.A. P' + Number(t.amount).toLocaleString() + '</div>';
+        else if (isPy) pills += '<div style="background:#10b981;color:#fff;font-size:10px;font-weight:800;padding:2px 4px;border-radius:3px;margin-top:2px;">PAY P' + Number(t.amount).toLocaleString() + '</div>';
+      });
+      html += '<div style="min-height:76px;background:' + (has ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)') + ';border:1px solid ' + (has ? 'var(--accent-gold)' : 'var(--border-color)') + ';border-radius:4px;padding:4px 6px;display:flex;flex-direction:column;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:12px;font-weight:' + (has ? 800 : 600) + ';color:' + (has ? 'var(--accent-gold)' : 'var(--text-muted)') + ';">' + day + '</span>' + (has ? '<span style="width:6px;height:6px;border-radius:50%;background:var(--accent-gold);"></span>' : '') + '</div>' +
+        '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">' + pills + '</div>' +
+        '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  changeMonth(delta, containerId, trackerType) {
+    this.currentCalendarMonth += delta;
+    if (this.currentCalendarMonth > 11) { this.currentCalendarMonth = 0; this.currentCalendarYear++; }
+    if (this.currentCalendarMonth < 0) { this.currentCalendarMonth = 11; this.currentCalendarYear--; }
+    this.renderCurrentTab();
+  }
+
+  resetMonth(containerId, trackerType) {
+    this.currentCalendarMonth = 8;
+    this.currentCalendarYear = 2026;
+    this.renderCurrentTab();
+  }
+
+  populateTellerSelect() {
+    const sel = document.getElementById('ep-teller-selector');
+    if (!sel) return;
+    const store = window.appStore, txns = store ? (store.data.transactions || []) : [];
+    const set = new Set();
+    txns.forEach(t => {
+      const isShort = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
+      const isShortPay = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && !t.applyToCA;
+      if (t.name && (isShort || isShortPay)) set.add(t.name.trim());
+    });
+    set.add('JUVYLYN H. TURA');
+    sel.innerHTML = Array.from(set.values()).sort().map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedTeller.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
+    sel.onchange = e => { this.selectedTeller = e.target.value; this.shortLedgerPage = 1; this.renderShortTrackerTab(); };
+  }
+
+  populateCollectorSelect() {
+    const sel = document.getElementById('ep-collector-selector');
+    if (!sel) return;
+    const store = window.appStore, txns = store ? (store.data.transactions || []) : [];
+    const set = new Set();
+    txns.forEach(t => {
+      const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
+      const isCAPay = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && t.applyToCA;
+      if (t.name && (isCA || isCAPay)) set.add(t.name.trim());
+    });
+    set.add('MARK ANTHONY (MAC2)');
+    sel.innerHTML = Array.from(set.values()).sort().map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedCollector.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
+    sel.onchange = e => { this.selectedCollector = e.target.value; this.caLedgerPage = 1; this.renderCashAdvanceTrackerTab(); };
+  }
+
+  // =========================================================================
+  // MANUAL PAYMENT MODAL
+  // =========================================================================
+  openPaymentModal(targetPerson, targetRole) {
+    const person = targetPerson || (this.activeTab === 'short-tracker' ? this.selectedTeller : this.selectedCollector);
+    const role = targetRole || (this.activeTab === 'short-tracker' ? 'Teller' : 'Collector');
+    const modal = document.getElementById('modal-ep-record-payment');
+    if (!modal) return;
+    const nm = document.getElementById('ep-paymodal-person'); if (nm) nm.value = person;
+    const rl = document.getElementById('ep-paymodal-role'); if (rl) rl.value = role;
+    const dt = document.getElementById('ep-paymodal-date'); if (dt) dt.value = new Date().toISOString().split('T')[0];
+    const am = document.getElementById('ep-paymodal-amount'); if (am) am.value = '';
+    const nt = document.getElementById('ep-paymodal-notes'); if (nt) nt.value = '';
+    const ti = document.getElementById('ep-paymodal-title');
+    if (ti) ti.textContent = role === 'Collector' ? 'Record Payment Against Cash Advance' : 'Record Payment Against Shortage';
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+
+  closePaymentModal() {
+    const modal = document.getElementById('modal-ep-record-payment');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
+  }
+
+  submitManualPayment() {
+    const person = (document.getElementById('ep-paymodal-person') ? document.getElementById('ep-paymodal-person').value : '').trim();
+    const role = document.getElementById('ep-paymodal-role') ? document.getElementById('ep-paymodal-role').value : 'Teller';
+    const date = document.getElementById('ep-paymodal-date') ? document.getElementById('ep-paymodal-date').value : new Date().toISOString().split('T')[0];
+    const amt = parseFloat(document.getElementById('ep-paymodal-amount') ? document.getElementById('ep-paymodal-amount').value : '0');
+    const notes = (document.getElementById('ep-paymodal-notes') ? document.getElementById('ep-paymodal-notes').value : '').trim();
+    if (!person || amt <= 0) {
+      alert('Please provide a valid person name and payment amount greater than zero.');
+      return;
+    }
+    const isCA = role === 'Collector';
+    const store = window.appStore;
+    if (!store) return;
+    store.data.transactions.push({
+      id: 'TXN-PAY-' + Date.now(),
+      date: date,
+      amount: amt,
+      description: 'PAYMENT',
+      name: person,
+      role: role,
+      boothCode: '',
+      location: '',
+      classification: 'PAYMENT',
+      type: 'PAYMENT',
+      transactionType: 'PAYMENT',
+      applyToCA: isCA,
+      appliedTo: isCA ? 'Cash Advance' : 'Short Teller',
+      note: notes || (isCA ? 'CA Payment - ' + person : 'Shortage Payment - ' + person),
+      verificationStatus: 'VERIFIED',
+      status: 'Verified'
+    });
+    store.save();
+    if (window.sfx) window.sfx.playChime();
+    this.closePaymentModal();
+    alert('Payment of P' + amt.toLocaleString('en-US', { minimumFractionDigits: 2 }) + ' recorded for ' + person + '!');
+    this.render();
+  }
+
+  // =========================================================================
+  // UNIFIED EDIT MODAL & REAL-TIME RECALCULATION
+  // =========================================================================
+  openEditModal(txnId, section) {
+    const store = window.appStore;
+    if (!store) return;
+    const txn = store.data.transactions.find(t => t.id === txnId);
+    if (!txn) {
+      alert('Transaction record not found.');
       return;
     }
 
-    if (window.sfx) window.sfx.playClick();
+    this._editingTxnId = txnId;
+    this._editingSection = section || 'expense';
+    this._editingOriginalAmount = Number(txn.amount) || 0;
 
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'APEX OmniERP - Expenses & Payment Engine';
-    workbook.created = new Date();
+    const modal = document.getElementById('modal-ep-edit-txn');
+    if (!modal) return;
 
-    // Sheet 1: Main Expenses & Payment
-    const sheet1 = workbook.addWorksheet('Expenses & Payment', {
-      views: [{ showGridLines: true }]
-    });
+    const idEl = document.getElementById('ep-edit-txn-id');
+    const secEl = document.getElementById('ep-edit-txn-section');
+    if (idEl) idEl.value = txnId;
+    if (secEl) secEl.value = this._editingSection;
 
-    sheet1.columns = [
-      { header: 'DATE', key: 'date', width: 14 },
-      { header: 'AMOUNT (PHP)', key: 'amount', width: 18 },
-      { header: 'CLASSIFICATION', key: 'class', width: 16 },
-      { header: 'DESCRIPTION', key: 'desc', width: 35 },
-      { header: 'NAME', key: 'name', width: 25 },
-      { header: 'BOOTH CODE', key: 'booth', width: 16 },
-      { header: 'LOCATION', key: 'loc', width: 22 },
-      { header: 'DATE PERIOD COVER', key: 'cover', width: 22 },
-      { header: 'NOTE', key: 'note', width: 30 },
-      { header: 'STATUS', key: 'status', width: 14 }
-    ];
+    const fDate = document.getElementById('ep-edit-txn-date');
+    const fType = document.getElementById('ep-edit-txn-type');
+    const fAmount = document.getElementById('ep-edit-txn-amount');
+    const fRemaining = document.getElementById('ep-edit-txn-remaining');
+    const fSettlement = document.getElementById('ep-edit-txn-settlement');
+    const fName = document.getElementById('ep-edit-txn-name');
+    const fDesc = document.getElementById('ep-edit-txn-description');
+    const fLoc = document.getElementById('ep-edit-txn-location');
+    const fBooth = document.getElementById('ep-edit-txn-boothcode');
+    const fNotes = document.getElementById('ep-edit-txn-notes');
 
-    // Style headers
-    sheet1.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    sheet1.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF1E293B' }
-    };
+    if (fDate) fDate.value = txn.date || '';
+    if (fType) fType.value = txn.type || txn.classification || 'EXPENSE';
+    if (fAmount) fAmount.value = Number(txn.amount) || 0;
+    if (fName) fName.value = txn.name || '';
+    if (fDesc) fDesc.value = txn.description || '';
+    if (fLoc) fLoc.value = txn.location || '';
+    if (fBooth) fBooth.value = txn.boothCode || '';
+    if (fNotes) fNotes.value = txn.note || '';
 
-    const txns = window.appStore.getTransactions();
-    txns.forEach(t => {
-      const isCollector = (t.role || '').toUpperCase() === 'COLLECTOR';
-      const row = sheet1.addRow({
-        date: t.date,
-        amount: Number(t.amount),
-        class: t.classification,
-        desc: t.description,
-        name: t.name,
-        booth: isCollector ? '' : (t.boothCode || ''),
-        loc: t.location,
-        cover: t.datePeriodCover,
-        note: t.note,
-        status: t.verificationStatus
-      });
-      row.getCell('amount').numFmt = '₱#,##0.00';
-    });
+    const oad = document.getElementById('ep-edit-orig-amount-display');
+    if (oad) oad.textContent = 'P' + this._editingOriginalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 });
 
-    // Sheet 2: Daily Payment Monitoring Summary
-    const sheet2 = workbook.addWorksheet('Daily Payment Monitoring');
-    sheet2.columns = [
-      { header: 'EMPLOYEE', key: 'name', width: 25 },
-      { header: 'ROLE', key: 'role', width: 16 },
-      { header: 'CASH ADVANCE (CA)', key: 'ca', width: 20 },
-      { header: 'SHORT', key: 'short', width: 18 },
-      { header: 'PAYMENT', key: 'pay', width: 18 },
-      { header: 'RUNNING CA BALANCE', key: 'bal', width: 22 }
-    ];
+    const titleEl = document.getElementById('ep-edit-modal-title');
+    const grpRemaining = document.getElementById('ep-edit-grp-remaining');
+    const grpSettlement = document.getElementById('ep-edit-grp-settlement');
+    const grpSettlementRow = document.getElementById('ep-edit-grp-settlement-row');
+    const grpDesc = document.getElementById('ep-edit-grp-desc');
+    const grpLocRow = document.getElementById('ep-edit-grp-loc-row');
+    const typeLabel = document.getElementById('ep-edit-type-label');
+    const descLabel = document.getElementById('ep-edit-desc-label');
+    const personLabel = document.getElementById('ep-edit-personnel-label');
 
-    sheet2.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    sheet2.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF0F766E' }
-    };
+    if (this._editingSection === 'expense') {
+      if (titleEl) titleEl.textContent = '✏️ Edit Operating Expense';
+      if (grpRemaining) grpRemaining.style.display = 'none';
+      if (grpSettlement) grpSettlement.style.display = 'none';
+      if (grpSettlementRow) grpSettlementRow.style.gridTemplateColumns = '1fr';
+      if (grpDesc) grpDesc.style.display = 'block';
+      if (grpLocRow) grpLocRow.style.display = 'grid';
+      if (descLabel) descLabel.textContent = 'Expense Item / Description:';
+      if (personLabel) personLabel.textContent = 'Staff / Station Allocation:';
+    } else if (this._editingSection === 'short') {
+      if (titleEl) titleEl.textContent = '✏️ Edit Shortage / Payment Record (Teller)';
+      if (grpRemaining) grpRemaining.style.display = 'block';
+      if (grpSettlement) grpSettlement.style.display = 'block';
+      if (grpSettlementRow) grpSettlementRow.style.gridTemplateColumns = '1fr 1fr';
+      if (grpDesc) grpDesc.style.display = 'block';
+      if (grpLocRow) grpLocRow.style.display = 'grid';
+      if (typeLabel) typeLabel.textContent = 'Transaction Type (SHORT / PAYMENT):';
+      if (personLabel) personLabel.textContent = 'Teller Name:';
+    } else if (this._editingSection === 'ca') {
+      if (titleEl) titleEl.textContent = '✏️ Edit Cash Advance / Payment Record (Collector)';
+      if (grpRemaining) grpRemaining.style.display = 'block';
+      if (grpSettlement) grpSettlement.style.display = 'block';
+      if (grpSettlementRow) grpSettlementRow.style.gridTemplateColumns = '1fr 1fr';
+      if (grpDesc) grpDesc.style.display = 'block';
+      if (grpLocRow) grpLocRow.style.display = 'grid';
+      if (typeLabel) typeLabel.textContent = 'Transaction Type (CASH ADVANCE / PAYMENT):';
+      if (personLabel) personLabel.textContent = 'Collector Name:';
+    } else if (this._editingSection === 'payment') {
+      if (titleEl) titleEl.textContent = '✏️ Edit Payment Record';
+      if (grpRemaining) grpRemaining.style.display = 'block';
+      if (grpSettlement) grpSettlement.style.display = 'block';
+      if (grpSettlementRow) grpSettlementRow.style.gridTemplateColumns = '1fr 1fr';
+      if (grpDesc) grpDesc.style.display = 'block';
+      if (grpLocRow) grpLocRow.style.display = 'none';
+      if (typeLabel) typeLabel.textContent = 'Settlement Category:';
+      if (personLabel) personLabel.textContent = 'Personnel & Role:';
+    }
 
-    const daily = window.appStore.getDailyPaymentMonitoring(this.targetDailyDate);
-    daily.records.forEach(r => {
-      const row = sheet2.addRow({
-        name: r.name,
-        role: r.role,
-        ca: r.ca,
-        short: r.short,
-        pay: r.payment,
-        bal: r.caBalance
-      });
-      row.getCell('ca').numFmt = '₱#,##0.00';
-      row.getCell('short').numFmt = '₱#,##0.00';
-      row.getCell('pay').numFmt = '₱#,##0.00';
-      row.getCell('bal').numFmt = '₱#,##0.00';
-    });
+    this.handleEditAmountInput();
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Expenses_and_Payment_Ledger_${new Date().toISOString().split('T')[0]}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (txn.settlement && fSettlement) {
+      fSettlement.value = txn.settlement;
+    }
+
+    modal.classList.add('active');
+    modal.style.display = 'flex';
   }
 
-  // Open Technical Audit History Modal
-  openAuditModal() {
-    if (window.sfx) window.sfx.playClick();
-    const tbody = document.getElementById('ep-audit-tbody');
-    if (tbody) {
-      const logs = window.appStore.getAuditLogs();
-      tbody.innerHTML = logs.map(l => `
-        <tr>
-          <td style="font-family: monospace; font-size: 11.5px;">${l.timestamp}</td>
-          <td><span class="badge badge-info" style="font-size: 10px;">${l.eventType}</span></td>
-          <td style="font-weight: 600; font-size: 12px;">${l.user}</td>
-          <td style="font-size: 12px;">${l.details}</td>
-          <td style="font-family: monospace; font-size: 11px;"><code>${l.recordId || '-'}</code></td>
-        </tr>
-      `).join('');
+  handleEditAmountInput() {
+    const txnId = this._editingTxnId;
+    const store = window.appStore;
+    if (!store || !txnId) return;
+
+    const amountInput = document.getElementById('ep-edit-txn-amount');
+    const remInput = document.getElementById('ep-edit-txn-remaining');
+    const setSelect = document.getElementById('ep-edit-txn-settlement');
+    const typeSelect = document.getElementById('ep-edit-txn-type');
+    const nameInput = document.getElementById('ep-edit-txn-name');
+
+    if (!amountInput || !remInput) return;
+
+    const newAmt = parseFloat(amountInput.value) || 0;
+    const currType = typeSelect ? typeSelect.value : 'EXPENSE';
+    const currPerson = (nameInput ? nameInput.value : '').trim().toUpperCase();
+
+    if (this._editingSection === 'short' || currType === 'SHORT' || (currType === 'PAYMENT' && !this._isCASection())) {
+      const txns = store.data.transactions || [];
+      let totalShort = 0, totalPaid = 0;
+      txns.forEach(t => {
+        if (t.id === txnId) return;
+        if (currPerson && t.name && !t.name.toUpperCase().includes(currPerson) && !currPerson.includes(t.name.toUpperCase())) return;
+
+        const isSh = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
+        const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && !t.applyToCA;
+        if (isSh) totalShort += Number(t.amount) || 0;
+        else if (isPy) totalPaid += Number(t.amount) || 0;
+      });
+
+      if (currType === 'SHORT') totalShort += newAmt;
+      else totalPaid += newAmt;
+
+      const calcRem = Math.max(0, totalShort - totalPaid);
+      remInput.value = calcRem.toFixed(2);
+
+      if (setSelect && !setSelect.dataset.userModified) {
+        if (calcRem === 0 && totalShort > 0) setSelect.value = 'Fully Paid';
+        else if (totalPaid > 0) setSelect.value = 'Partially Paid';
+        else setSelect.value = 'Pending';
+      }
+    } else if (this._editingSection === 'ca' || currType === 'CASH ADVANCE' || (currType === 'PAYMENT' && this._isCASection())) {
+      const txns = store.data.transactions || [];
+      let totalCA = 0, totalPaid = 0;
+      txns.forEach(t => {
+        if (t.id === txnId) return;
+        if (currPerson && t.name && !t.name.toUpperCase().includes(currPerson) && !currPerson.includes(t.name.toUpperCase())) return;
+
+        const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
+        const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && t.applyToCA;
+        if (isCA) totalCA += Number(t.amount) || 0;
+        else if (isPy) totalPaid += Number(t.amount) || 0;
+      });
+
+      if (currType === 'CASH ADVANCE') totalCA += newAmt;
+      else totalPaid += newAmt;
+
+      const calcRem = Math.max(0, totalCA - totalPaid);
+      remInput.value = calcRem.toFixed(2);
+
+      if (setSelect && !setSelect.dataset.userModified) {
+        if (calcRem === 0 && totalCA > 0) setSelect.value = 'Fully Paid';
+        else if (totalPaid > 0) setSelect.value = 'Partially Paid';
+        else setSelect.value = 'Pending';
+      }
     }
-    document.getElementById('modal-ep-audit').classList.add('active');
+  }
+
+  _isCASection() {
+    return this._editingSection === 'ca';
+  }
+
+  onEditCancelClicked() {
+    this.showConfirmModal({
+      title: 'Cancel Changes?',
+      message: 'You have unsaved changes. Are you sure you want to cancel and discard them?',
+      yesText: 'YES',
+      noText: 'NO',
+      isDanger: false,
+      onConfirm: () => {
+        this.closeEditModal();
+      },
+      onCancel: () => {
+      }
+    });
+  }
+
+  onEditSaveClicked() {
+    let saveMsg = 'Are you sure you want to save the changes made to this record?';
+    if (this._editingSection === 'short') {
+      saveMsg = 'Are you sure you want to save the changes made to this shortage record?';
+    } else if (this._editingSection === 'ca') {
+      saveMsg = 'Are you sure you want to save the changes made to this cash advance record?';
+    } else if (this._editingSection === 'payment') {
+      saveMsg = 'Are you sure you want to save the changes made to this payment record?';
+    }
+
+    this.showConfirmModal({
+      title: 'Save Changes?',
+      message: saveMsg,
+      yesText: 'YES',
+      noText: 'NO',
+      isDanger: false,
+      onConfirm: () => {
+        this._executeSaveTransaction();
+      },
+      onCancel: () => {
+      }
+    });
+  }
+
+  _executeSaveTransaction() {
+    const txnId = this._editingTxnId;
+    if (!txnId) return;
+
+    const store = window.appStore;
+    if (!store) return;
+    const idx = store.data.transactions.findIndex(t => t.id === txnId);
+    if (idx === -1) {
+      alert('Transaction record not found.');
+      return;
+    }
+
+    const nAmt = parseFloat(document.getElementById('ep-edit-txn-amount') ? document.getElementById('ep-edit-txn-amount').value : '0');
+    const nType = document.getElementById('ep-edit-txn-type') ? document.getElementById('ep-edit-txn-type').value : '';
+    const nDate = document.getElementById('ep-edit-txn-date') ? document.getElementById('ep-edit-txn-date').value : '';
+    const nName = (document.getElementById('ep-edit-txn-name') ? document.getElementById('ep-edit-txn-name').value : '').trim();
+    const nDesc = (document.getElementById('ep-edit-txn-description') ? document.getElementById('ep-edit-txn-description').value : '').trim();
+    const nLoc = (document.getElementById('ep-edit-txn-location') ? document.getElementById('ep-edit-txn-location').value : '').trim();
+    const nBooth = (document.getElementById('ep-edit-txn-boothcode') ? document.getElementById('ep-edit-txn-boothcode').value : '').trim();
+    const nNotes = (document.getElementById('ep-edit-txn-notes') ? document.getElementById('ep-edit-txn-notes').value : '').trim();
+    const nSettlement = document.getElementById('ep-edit-txn-settlement') ? document.getElementById('ep-edit-txn-settlement').value : '';
+
+    const txn = store.data.transactions[idx];
+    txn.amount = nAmt;
+    txn.type = nType;
+    txn.classification = this._getClassificationFromType(nType);
+    txn.date = nDate;
+    txn.name = nName;
+    txn.description = nDesc;
+    txn.location = nLoc;
+    txn.boothCode = nBooth;
+    txn.note = nNotes;
+    txn.settlement = nSettlement;
+
+    txn.isExpense = nType === 'EXPENSE';
+    txn.isShortage = nType === 'SHORT';
+    txn.isCashAdvance = nType === 'CASH ADVANCE';
+    if (nType === 'CASH ADVANCE') {
+      txn.applyToCA = true;
+      txn.appliedTo = 'Cash Advance';
+    } else if (nType === 'SHORT') {
+      txn.applyToCA = false;
+      txn.appliedTo = 'Short Teller';
+    }
+
+    store.save();
+    if (window.sfx) window.sfx.playChime();
+    this.closeEditModal();
+    this.render();
+  }
+
+  closeEditModal() {
+    const modal = document.getElementById('modal-ep-edit-txn');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
+    this._editingTxnId = null;
+    this._editingOriginalAmount = 0;
+  }
+
+  _getClassificationFromType(type) {
+    if (type === 'SHORT') return 'SHORT';
+    if (type === 'CASH ADVANCE') return 'CA';
+    if (type === 'PAYMENT') return 'PAYMENT';
+    return 'OTHER';
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\'/g, '&#039;');
   }
 }
 
 window.expensesPayment = new ExpensesPaymentController();
+document.addEventListener('DOMContentLoaded', function() {
+  window.expensesPayment.init();
+});

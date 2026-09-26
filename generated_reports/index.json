@@ -1,0 +1,39 @@
+[
+  {
+    "dateKey": "2026-09-17",
+    "dateFormatted": "September 17, 2026",
+    "sourceFile": "accounting_summary_2026-09-17.xlsx",
+    "recordsCount": 117,
+    "ddnFileName": "DDN - SEPTEMBER 17, 2026 - COMPLETED.xlsx",
+    "samalFileName": "SAMAL - SEPTEMBER 17, 2026 - COMPLETED.xlsx",
+    "metrics": {
+      "ddn": {
+        "matched": 86,
+        "bets": 548123,
+        "pay": 112000,
+        "comm": 68515.38,
+        "palawan": 367607.62,
+        "gross": 436123,
+        "salary": 27400
+      },
+      "samal": {
+        "matched": 31,
+        "bets": 126064,
+        "pay": 32800,
+        "comm": 15758,
+        "palawan": 77506,
+        "gross": 93264,
+        "salary": 9520
+      },
+      "overall": {
+        "bets": 674187,
+        "pay": 144800,
+        "comm": 84273.38,
+        "palawan": 445113.62,
+        "gross": 529387,
+        "salary": 36920
+      }
+    },
+    "timestamp": "2026-09-25T13:05:43.780Z"
+  }
+]
