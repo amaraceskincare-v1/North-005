@@ -54,20 +54,37 @@ class ExpensesPaymentController {
     if (!store.data.uploadedImageHashes) store.data.uploadedImageHashes = [];
     if (!store.data.employees) store.data.employees = [];
 
-    // Purge any lingering deletedFromTracker records from older sessions
-    const initialLen = store.data.transactions.length;
-    store.data.transactions = store.data.transactions.filter(t => !t.deletedFromTracker);
-    if (store.data.transactions.length !== initialLen) {
-      store.save();
-    }
+    // Purge any lingering deletedFromTracker records and deduplicate identical IDs
+    const seen = new Set();
+    const clean = [];
+    let modified = false;
 
-    if (store.data.epSeedInitialized) {
-      return;
-    }
-    if (store.data.transactions.length > 0) {
-      store.data.epSeedInitialized = true;
+    store.data.transactions.forEach(t => {
+      if (!t) return;
+      if (t.deletedFromTracker) {
+        modified = true;
+        return;
+      }
+      if (t.name && t.name.toUpperCase().includes('JENYVA')) {
+        t.name = 'JUVYLYN H. TURA';
+        modified = true;
+      }
+      if (!t.id) {
+        t.id = 'TXN-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+        modified = true;
+      }
+      // If an exact duplicate ID exists in legacy storage, assign a unique ID so it is an independent record
+      if (seen.has(t.id)) {
+        t.id = t.id + '-DUP-' + Math.random().toString(36).substr(2, 6);
+        modified = true;
+      }
+      seen.add(t.id);
+      clean.push(t);
+    });
+
+    if (modified || clean.length !== store.data.transactions.length) {
+      store.data.transactions = clean;
       store.save();
-      return;
     }
 
     if (!store.data.employees.find(e => e.name && e.name.toUpperCase().includes('TURA'))) {
@@ -83,46 +100,36 @@ class ExpensesPaymentController {
       });
     }
 
-    store.data.transactions.forEach(t => {
-      if (t.name && t.name.toUpperCase().includes('JENYVA')) t.name = 'JUVYLYN H. TURA';
-    });
-
-    if (!store.data.transactions.some(t => t.id === 'TXN-TURA-01')) {
-      store.data.transactions = store.data.transactions.filter(t => !(t.name && t.name.toUpperCase().includes('TURA')));
-      store.data.transactions.push(
-        { id: 'TXN-TURA-01', date: '2026-09-22', amount: 1140.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 22)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-        { id: 'TXN-TURA-02', date: '2026-09-23', amount: 325.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 23)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-        { id: 'TXN-TURA-PAY01', date: '2026-09-24', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-        { id: 'TXN-TURA-PAY02', date: '2026-09-25', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-        { id: 'TXN-TURA-PAY03', date: '2026-09-27', amount: 540.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Final settlement payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' }
-      );
+    // Do NOT wipe or overwrite user transactions if store already has records
+    if (store.data.epSeedInitialized || store.data.transactions.length > 0) {
+      store.data.epSeedInitialized = true;
+      return;
     }
 
-    if (!store.data.transactions.some(t => t.id === 'TXN-MAC-CA01')) {
-      store.data.transactions = store.data.transactions.filter(t => !(t.name && t.name.toUpperCase().includes('MARK ANTHONY')));
-      store.data.transactions.push(
-        { id: 'TXN-MAC-CA01', date: '2026-09-20', amount: 5000.00, description: 'CASH ADVANCE', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Collector Field Operations CA', classification: 'CA', type: 'CASH ADVANCE', transactionType: 'CASH_ADVANCE', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-        { id: 'TXN-MAC-PAY01', date: '2026-09-24', amount: 500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
-        { id: 'TXN-MAC-PAY02', date: '2026-09-25', amount: 1000.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
-        { id: 'TXN-MAC-PAY03', date: '2026-09-28', amount: 3500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Settlement payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' }
-      );
-    }
-
-    if (!store.data.transactions.some(t => t.id === 'TXN-EXP-01')) {
-      store.data.transactions.push(
-        { id: 'TXN-EXP-01', date: '2026-09-24', amount: 1200.00, description: 'Fuel Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Field gas allowance', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-02', date: '2026-09-24', amount: 400.00, description: 'Rent Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Motorcycle rental', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-03', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum', note: 'Tagum station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-04', date: '2026-09-24', amount: 30.00, description: 'WiFi Allowance', name: 'Maryjane Fernandez', role: 'Teller', boothCode: 'DDN-1782', location: 'Carmen', note: 'Carmen station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-05', date: '2026-09-24', amount: 50.00, description: 'WiFi Allowance', name: 'Luzviminda Galasatan', role: 'Teller', boothCode: 'DDN-1475', location: 'Panabo', note: 'Panabo station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-06', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Almera Digamon', role: 'Teller', boothCode: 'DDN-768', location: 'Panabo', note: 'Panabo Cagangohan station', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-07', date: '2026-09-24', amount: 10.00, description: 'WiFi Allowance (Hinay Signal)', name: 'Daisy Mae Senadero', role: 'Teller', boothCode: 'DDN-1739', location: 'Sto. Tomas', note: 'Hinay Signal', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-08', date: '2026-09-24', amount: 700.00, description: 'Labor and Deploy Booth', name: 'Logistics Team', role: 'General', boothCode: '', location: 'Panabo Area', note: 'Panabo Area deployment', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-09', date: '2026-09-24', amount: 1000.00, description: 'Meals and Snacks Survey Taza Northman', name: 'Survey Team', role: 'General', boothCode: '', location: 'Davao Del Norte', note: 'Survey Taza Northman', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-12', date: '2026-09-24', amount: 1520.00, description: 'Rent Fee P-6 Liboganon Tagum', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum Liboganon', note: 'Sep. 30 - Oct. 30, To Rulan A.R.', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-        { id: 'TXN-EXP-13', date: '2026-09-24', amount: 330.00, description: 'POS Load 1 Month DDN-1716', name: 'Princess Solamillo', role: 'Teller', boothCode: 'DDN-1716', location: 'Tagum / Sto. Tomas', note: 'Data plan load', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' }
-      );
-    }
+    // Only seed initial records if database is completely empty
+    store.data.transactions.push(
+      { id: 'TXN-TURA-01', date: '2026-09-22', amount: 1140.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 22)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-TURA-02', date: '2026-09-23', amount: 325.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 23)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-TURA-PAY01', date: '2026-09-24', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-TURA-PAY02', date: '2026-09-25', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-TURA-PAY03', date: '2026-09-27', amount: 540.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Final settlement payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-MAC-CA01', date: '2026-09-20', amount: 5000.00, description: 'CASH ADVANCE', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Collector Field Operations CA', classification: 'CA', type: 'CASH ADVANCE', transactionType: 'CASH_ADVANCE', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-MAC-PAY01', date: '2026-09-24', amount: 500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-MAC-PAY02', date: '2026-09-25', amount: 1000.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-MAC-PAY03', date: '2026-09-28', amount: 3500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Settlement payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
+      { id: 'TXN-EXP-01', date: '2026-09-24', amount: 1200.00, description: 'Fuel Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Field gas allowance', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-02', date: '2026-09-24', amount: 400.00, description: 'Rent Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Motorcycle rental', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-03', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum', note: 'Tagum station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-04', date: '2026-09-24', amount: 30.00, description: 'WiFi Allowance', name: 'Maryjane Fernandez', role: 'Teller', boothCode: 'DDN-1782', location: 'Carmen', note: 'Carmen station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-05', date: '2026-09-24', amount: 50.00, description: 'WiFi Allowance', name: 'Luzviminda Galasatan', role: 'Teller', boothCode: 'DDN-1475', location: 'Panabo', note: 'Panabo station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-06', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Almera Digamon', role: 'Teller', boothCode: 'DDN-768', location: 'Panabo', note: 'Panabo Cagangohan station', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-07', date: '2026-09-24', amount: 10.00, description: 'WiFi Allowance (Hinay Signal)', name: 'Daisy Mae Senadero', role: 'Teller', boothCode: 'DDN-1739', location: 'Sto. Tomas', note: 'Hinay Signal', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-08', date: '2026-09-24', amount: 700.00, description: 'Labor and Deploy Booth', name: 'Logistics Team', role: 'General', boothCode: '', location: 'Panabo Area', note: 'Panabo Area deployment', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-09', date: '2026-09-24', amount: 1000.00, description: 'Meals and Snacks Survey Taza Northman', name: 'Survey Team', role: 'General', boothCode: '', location: 'Davao Del Norte', note: 'Survey Taza Northman', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-12', date: '2026-09-24', amount: 1520.00, description: 'Rent Fee P-6 Liboganon Tagum', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum Liboganon', note: 'Sep. 30 - Oct. 30, To Rulan A.R.', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
+      { id: 'TXN-EXP-13', date: '2026-09-24', amount: 330.00, description: 'POS Load 1 Month DDN-1716', name: 'Princess Solamillo', role: 'Teller', boothCode: 'DDN-1716', location: 'Tagum / Sto. Tomas', note: 'Data plan load', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' }
+    );
+    store.data.epSeedInitialized = true;
     store.save();
   }
 
@@ -550,9 +557,12 @@ class ExpensesPaymentController {
       isDanger: true,
       onConfirm: () => {
         const store = window.appStore;
-        if (!store || !store.data || !store.data.transactions) return;
-        store.data.transactions = store.data.transactions.filter(t => t.id !== txnId);
-        store.save();
+        if (!store || !store.data || !Array.isArray(store.data.transactions)) return;
+        const idx = store.data.transactions.findIndex(t => t.id === txnId);
+        if (idx !== -1) {
+          store.data.transactions.splice(idx, 1);
+          store.save();
+        }
         if (window.sfx) window.sfx.playChime();
         this.render();
       }
@@ -1195,31 +1205,93 @@ class ExpensesPaymentController {
   populateTellerSelect() {
     const sel = document.getElementById('ep-teller-selector');
     if (!sel) return;
-    const store = window.appStore, txns = store ? (store.data.transactions || []) : [];
+    const store = window.appStore;
     const set = new Set();
+
+    // 1. All registered tellers from store.data.employees
+    if (store && store.data && Array.isArray(store.data.employees)) {
+      store.data.employees.forEach(e => {
+        const role = (e.role || '').toUpperCase();
+        if (role.includes('TELLER') && e.name) {
+          set.add(e.name.trim());
+        }
+      });
+    }
+
+    // 2. Default tracked teller
+    set.add('JUVYLYN H. TURA');
+
+    // 3. Any additional tellers from transactions
+    const txns = store ? (store.data.transactions || []) : [];
     txns.forEach(t => {
       const isShort = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
       const isShortPay = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && !t.applyToCA;
-      if (t.name && (isShort || isShortPay)) set.add(t.name.trim());
+      if (t.name && (isShort || isShortPay)) {
+        set.add(t.name.trim());
+      }
     });
-    set.add('JUVYLYN H. TURA');
-    sel.innerHTML = Array.from(set.values()).sort().map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedTeller.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
-    sel.onchange = e => { this.selectedTeller = e.target.value; this.shortLedgerPage = 1; this.renderShortTrackerTab(); };
+
+    const list = Array.from(set.values()).sort();
+    if (!list.includes(this.selectedTeller)) {
+      this.selectedTeller = list[0] || 'JUVYLYN H. TURA';
+    }
+
+    sel.innerHTML = list.map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedTeller.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
+    sel.onchange = e => {
+      this.selectedTeller = e.target.value;
+      this.shortLedgerPage = 1;
+      this.renderShortTrackerTab();
+    };
   }
 
   populateCollectorSelect() {
     const sel = document.getElementById('ep-collector-selector');
     if (!sel) return;
-    const store = window.appStore, txns = store ? (store.data.transactions || []) : [];
+    const store = window.appStore;
     const set = new Set();
+
+    // 1. All registered collectors from store.data.employees
+    if (store && store.data && Array.isArray(store.data.employees)) {
+      store.data.employees.forEach(e => {
+        const role = (e.role || '').toUpperCase();
+        if (role.includes('COLLECTOR') && e.name) {
+          set.add(e.name.trim());
+        }
+      });
+    }
+
+    // 2. Official roster of Sector Collectors (never disappear even if 0 transactions)
+    const officialCollectors = [
+      'MARK ANTHONY (MAC2)',
+      'JOHN',
+      'MUHLEN',
+      'JASON',
+      'Jayson Pacaña'
+    ];
+    officialCollectors.forEach(c => set.add(c));
+
+    // 3. Any additional collectors from transactions
+    const txns = store ? (store.data.transactions || []) : [];
     txns.forEach(t => {
       const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
       const isCAPay = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && t.applyToCA;
-      if (t.name && (isCA || isCAPay)) set.add(t.name.trim());
+      const isColRole = (t.role || '').toUpperCase().includes('COLLECTOR');
+      if (t.name && (isCA || isCAPay || isColRole)) {
+        set.add(t.name.trim());
+      }
     });
-    set.add('MARK ANTHONY (MAC2)');
-    sel.innerHTML = Array.from(set.values()).sort().map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedCollector.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
-    sel.onchange = e => { this.selectedCollector = e.target.value; this.caLedgerPage = 1; this.renderCashAdvanceTrackerTab(); };
+
+    const list = Array.from(set.values()).sort();
+    if (!list.includes(this.selectedCollector)) {
+      this.selectedCollector = list[0] || 'MARK ANTHONY (MAC2)';
+    }
+
+    sel.innerHTML = list.map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedCollector.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
+    sel.onchange = e => {
+      this.selectedCollector = e.target.value;
+      this.caLedgerPage = 1;
+      this.renderCashAdvanceTrackerTab();
+    };
   }
 
   // =========================================================================

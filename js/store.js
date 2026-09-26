@@ -1332,9 +1332,15 @@ class Store {
             needsSave = true;
           }
 
-          // Ensure Jenyva H. Tura and Collector John obligations are initialized for Employee Accountability
-          const hasJenyva = parsed.transactions && parsed.transactions.some(t => (t.name || '').toUpperCase().includes('JENYVA'));
-          if (!hasJenyva) {
+          // Ensure Jenyva H. Tura and Collector John obligations are initialized for Employee Accountability (ONE-TIME ONLY)
+          const hasAccountability = parsed._accountabilitySeeded ||
+            (parsed.transactions && parsed.transactions.some(t => {
+              const u = (t.name || '').toUpperCase();
+              return u.includes('JENYVA') || u.includes('JUVYLYN') || (t.id && (t.id.includes('JENYVA') || t.id.includes('TURA')));
+            }));
+
+          if (!hasAccountability && (!parsed.transactions || parsed.transactions.length === 0)) {
+            parsed._accountabilitySeeded = true;
             const accountabilitySeedTxns = [
               {
                 id: 'TXN-2026-0924-JENYVA-01',
@@ -1541,6 +1547,29 @@ class Store {
             ];
             parsed.transactions = [...accountabilitySeedTxns, ...(parsed.transactions || [])];
             needsSave = true;
+          } else {
+            parsed._accountabilitySeeded = true;
+          }
+
+          // Deduplicate any repeated transactions with identical IDs
+          if (parsed.transactions && Array.isArray(parsed.transactions)) {
+            const seen = new Set();
+            const originalLength = parsed.transactions.length;
+            parsed.transactions = parsed.transactions.filter(t => {
+              if (!t) return false;
+              if (!t.id) {
+                t.id = 'TXN-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+                return true;
+              }
+              if (seen.has(t.id)) {
+                return false; // remove duplicate identical record
+              }
+              seen.add(t.id);
+              return true;
+            });
+            if (parsed.transactions.length !== originalLength) {
+              needsSave = true;
+            }
           }
           // Ensure inventory is upgraded to the rebuilt schema with sequential 'no' and assignment history
           if (!parsed.inventory || parsed.inventory.length === 0 || !parsed.inventory[0].no || parsed.inventory[0].imei !== undefined) {
