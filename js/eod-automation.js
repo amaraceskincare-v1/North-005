@@ -1137,6 +1137,21 @@
       }, 1000);
     }
 
+    downloadMasterTemplate(type) {
+      const cleanType = (type || 'ddn').toLowerCase();
+      const filename = cleanType === 'samal' ? 'SAMAL - MASTER TEMPLATE.xlsx' : 'DDN - MASTER TEMPLATE.xlsx';
+      const downloadUrl = `/api/templates/download?type=${encodeURIComponent(cleanType)}`;
+
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.setAttribute('download', filename);
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+      }, 1000);
+    }
+
     async downloadHistoryReport(dateKey, type) {
       return this.downloadReport(dateKey, type);
     }
@@ -1229,4 +1244,5 @@
 
   // Expose global instance
   window.eodEngine = new EODAutomationEngine();
+  window.downloadMasterTemplate = (type) => window.eodEngine.downloadMasterTemplate(type);
 })();

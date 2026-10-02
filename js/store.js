@@ -114,8 +114,8 @@ const RAW_TELLERS = [
   { id: "DDN005-SR1422", name: "Marcia Cabudlan", address: "Bobongon, Sto. Tomas", booth: "DDN-1422" },
   { id: "DDN005-SR1474", name: "Joycedyl Buhia", address: "P#9 Kapwa, Tibal.og, Sto. Tomas", booth: "DDN-1474" },
   { id: "DDN005-SR1524", name: "Mary Joy Blanco", address: "Darluz Subdivision, Sto. Tomas", booth: "DDN-1524" },
-  { id: "DDN005-SR1680", name: "Marites Riño", address: "P6 New Katipunan, Sto. Tomas", booth: "DDN-1680" },
-  { id: "DDN005-SR1703", name: "Trexy Echaverie", address: "P1-A, Sintro, Balagonan, Sto. Tomas", booth: "DDN-1703" },
+  { id: "DDN005-SR765", name: "JENYVEV H. TURA", address: "BUGTONG LUBI ROAD, BALAGUNAN, Sto. Tomas", booth: "DDN-1703" },
+  { id: "DDN005-SR1703", name: "Trexy Echaverie", address: "BUGTONG LUBI ROAD, BALAGUNAN, Sto. Tomas", booth: "DDN-1703" },
   { id: "DDN005-SR1715", name: "Sherymae Oyon-Oyon", address: "Purok 1B, Menze, Sto. Tomas", booth: "DDN-1715" },
   { id: "DDN005-SR1721", name: "Evelyn Refugio", address: "P-20C, Veterans Tibal Og, Sto. Tomas", booth: "DDN-1721" },
   { id: "DDN005-SR1722", name: "Janice Labisto", address: "P18 Feeder Rd. 3, Sto. Tomas", booth: "DDN-1722" },
@@ -206,6 +206,28 @@ const RAW_COLLECTORS = [
 function buildDefaultStore() {
   const employees = [];
   const booths = [];
+
+  // Add Administrator
+  const adminAddr = parseAddress('HQ Tagum City Command Center, Tagum City');
+  employees.push({
+    id: 'DDN005-ADM01',
+    name: 'Peter John Carrillo',
+    gender: 'Male',
+    role: 'OPERATIONS ADMINISTRATOR',
+    department: 'dept-admin',
+    area: 'HQ Command Center',
+    address: 'HQ Tagum City Command Center, Tagum City',
+    purok: adminAddr.purok,
+    municipality: adminAddr.municipality,
+    lat: 7.4490,
+    lng: 125.8090,
+    boothCode: '-',
+    posSerial: 'ADM-WS-001',
+    printerSerial: 'N/A',
+    phone: '+63 946 166 7956',
+    status: 'Active',
+    etsStatus: 'Active'
+  });
 
   // Add Supervisors
   const supAddr = parseAddress('HQ Tagum City Command Center, Tagum City');
@@ -307,12 +329,10 @@ function buildDefaultStore() {
       alertThresholdThermalPaper: 25
     },
     departments: [
-      { id: 'dept-exec', name: 'Executive & Operations Directorate', head: 'Mariano V. Duterte Jr.', icon: 'crown' },
-      { id: 'dept-sup', name: 'Team Davao Del Norte Supervisors', head: 'SIR JUNDY', icon: 'shield-check' },
-      { id: 'dept-col', name: 'Field Collectors Unit', head: 'MARK ANTHONY (MAC2)', icon: 'bike' },
-      { id: 'dept-tel', name: 'OUTLET & Booth Operations', head: 'Jehramea Marte', icon: 'store' },
-      { id: 'dept-aud', name: 'Internal Audit & Discrepancy Control', head: 'Bernadette L. Santos', icon: 'calculator' },
-      { id: 'dept-log', name: 'Logistics & Hardware Maintenance', head: 'Geronimo C. Ramos', icon: 'wrench' }
+      { id: 'dept-tel', name: 'Outlet & Booth Operations', role: 'Teller', head: 'Jehramea Marte', icon: 'store' },
+      { id: 'dept-col', name: 'Field Collector Units', role: 'Collector', head: 'MARK ANTHONY (MAC2)', icon: 'bike' },
+      { id: 'dept-sup', name: 'Team Davao Supervisors', role: 'Supervisor', head: 'SIR JUNDY', icon: 'shield-check' },
+      { id: 'dept-admin', name: 'Administrator', role: 'Operations Administrator', head: 'Peter John Carrillo', icon: 'crown' }
     ],
     booths: booths,
     employees: employees,
@@ -698,460 +718,18 @@ function buildDefaultStore() {
       { id: 'stage-balancing', title: '4. EOD Cut-Off & Balancing', color: '#8b5cf6' },
       { id: 'stage-reconciled', title: '5. Reconciled & Remitted', color: '#059669' }
     ],
-    pipelineCards: [
-      { id: 'PIP-DDN-01', title: 'Sto. Tomas Main Circuit', boothCode: 'DDN-762', teller: 'Davilyn Gelito', collector: 'JOHN (DDN005-SC001)', stage: 'stage-midday', targetAmount: 85000, currentAmount: 74776.50, time: '14:00', priority: 'High' },
-      { id: 'PIP-DDN-02', title: 'Tagum / Kapalong Corridor', boothCode: 'DDN-350', teller: 'Mary Lovelyn Ramos', collector: 'MUHLEN (DDN005-SC002)', stage: 'stage-collecting', targetAmount: 95000, currentAmount: 62000, time: '14:30', priority: 'High' },
-      { id: 'PIP-DDN-03', title: 'Carmen / Tagum Route', boothCode: 'DDN-397', teller: 'Maria Fe N. Gomez', collector: 'JASON (DDN005-SC003)', stage: 'stage-reconciled', targetAmount: 110000, currentAmount: 110000, time: '16:00', priority: 'Completed' },
-      { id: 'PIP-DDN-04', title: 'Panabo City Central Catchment', boothCode: 'DDN-768', teller: 'Almera Digamon', collector: 'MARK ANTHONY (DDN005-SC004)', stage: 'stage-balancing', targetAmount: 130000, currentAmount: 125000, time: '15:00', priority: 'Urgent' }
-    ],
-    transactions: [
-      // September 06, 2024 Yellow Pad Ledger Transactions & Prior Baseline
-      // Prior Day Baseline CA
-      {
-        id: 'TXN-2024-0901-01',
-        date: '2024-09-01',
-        amount: 3500.00,
-        description: 'C.A. FIELD ALLOWANCE',
-        name: 'MARK ANTHONY (MAC2)',
-        employeeId: 'DDN005-SC004',
-        role: 'Collector',
-        boothCode: '',
-        location: 'Panabo City',
-        datePeriodCover: '2024-09-01',
-        note: 'Emergency Motor Repair CA',
-        classification: 'CA',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: null,
-        ocrRawText: 'C.A. COLL. MARK ANTHONY 3,500'
-      },
-      {
-        id: 'TXN-2024-0903-01',
-        date: '2024-09-03',
-        amount: 1500.00,
-        description: 'SHORT DRAW REMITTANCE',
-        name: 'Davilyn Gelito',
-        employeeId: 'DDN005-SR762',
-        role: 'Teller',
-        boothCode: 'DDN-762',
-        location: 'Sto. Tomas',
-        datePeriodCover: '2024-09-03',
-        note: 'Midday draw cash discrepancy (Independent Shortage)',
-        classification: 'SHORT',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: null,
-        ocrRawText: 'SHORT DRAW 1,500'
-      },
-      {
-        id: 'TXN-2024-0905-01',
-        date: '2024-09-05',
-        amount: 2000.00,
-        description: 'C.A. OPERATIONAL EXPENSE',
-        name: 'Buffer Reliever 1 (Sto. Tomas)',
-        employeeId: 'DDN005-REL01',
-        role: 'Reliever',
-        boothCode: '',
-        location: 'Sto. Tomas',
-        datePeriodCover: '2024-09-05',
-        note: 'Advance for multi-booth relief coverage',
-        classification: 'CA',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: null,
-        ocrRawText: 'C.A. RELIEVER 1 2,000'
-      },
-      // Yellow Pad Reference Items (Sep 06, 2024)
-      {
-        id: 'TXN-2024-0906-01',
-        date: '2024-09-06',
-        amount: 1200.00,
-        description: 'FUEL MOTOR',
-        name: 'JOHN',
-        employeeId: 'DDN005-SC001',
-        role: 'Collector',
-        boothCode: '',
-        location: 'Davao Del Norte',
-        datePeriodCover: '2024-09-06',
-        note: 'Motorcycle Gas Allowance',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '1,200 - FUEL MOTOR'
-      },
-      {
-        id: 'TXN-2024-0906-02',
-        date: '2024-09-06',
-        amount: 400.00,
-        description: 'RENT MOTOR',
-        name: 'JOHN',
-        employeeId: 'DDN005-SC001',
-        role: 'Collector',
-        boothCode: '',
-        location: 'Field Route',
-        datePeriodCover: '2024-09-06',
-        note: 'Motor Rental for Field Collection',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '400 - RENT MOTOR'
-      },
-      {
-        id: 'TXN-2024-0906-03',
-        date: '2024-09-06',
-        amount: 20.00,
-        description: 'WIFI DDN 1477',
-        name: 'MELANIE SARAWI',
-        employeeId: 'DDN005-SR1477',
-        role: 'Teller',
-        boothCode: 'DDN-1477',
-        location: 'TAGUM',
-        datePeriodCover: '2024-09-06',
-        note: 'Wifi Allowance',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '20 - WIFI DDN 1477 MELANIE SARAWI (TAGUM)'
-      },
-      {
-        id: 'TXN-2024-0906-04',
-        date: '2024-09-06',
-        amount: 30.00,
-        description: 'WIFI DDN 1782',
-        name: 'MARYJANE FERNANDEZ',
-        employeeId: 'DDN005-SR1782',
-        role: 'Teller',
-        boothCode: 'DDN-1782',
-        location: 'CARMEN',
-        datePeriodCover: '2024-09-06',
-        note: 'Wifi Allowance',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '30 - WIFI DDN 1782 MARYJANE FERNANDEZ (CARMEN)'
-      },
-      {
-        id: 'TXN-2024-0906-05',
-        date: '2024-09-06',
-        amount: 834.00,
-        description: 'DOOR BOLT 10PCS, DOOR HASH 5PCS, PADLOCK 5PCS',
-        name: 'General Maintenance',
-        employeeId: 'DDN005-GEN',
-        role: 'General',
-        boothCode: 'DDN BOOTHS',
-        location: 'Davao Del Norte Hub',
-        datePeriodCover: '2024-09-06',
-        note: 'FOR BOOTH Hardware Security Supplies',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '834 - DOOR BOLT 10PCS, DOOR HASH 5PCS, PADLOCK 5PCS FOR BOOTH'
-      },
-      {
-        id: 'TXN-2024-0906-06',
-        date: '2024-09-06',
-        amount: 4600.00,
-        description: 'THERMAL PAPER 300 ROLLS',
-        name: 'Central Warehouse Supply',
-        employeeId: 'DDN005-WHSE',
-        role: 'General',
-        boothCode: 'HQ-WHSE',
-        location: 'Warehouse',
-        datePeriodCover: '2024-09-06',
-        note: 'POS Printer Consumables 300 Rolls',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '4,600 - THERMAL PAPER 300 ROLLS.'
-      },
-      {
-        id: 'TXN-2024-0906-07',
-        date: '2024-09-06',
-        amount: 15.00,
-        description: 'WIFI DDN 1475',
-        name: 'LUZVIMINDA GALASATAN',
-        employeeId: 'DDN005-SR1475',
-        role: 'Teller',
-        boothCode: 'DDN-1475',
-        location: 'PANABO',
-        datePeriodCover: '2024-09-06',
-        note: 'Wifi Allowance',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '15 - WIFI DDN 1475 LUZVIMINDA GALASATAN (PANABO)'
-      },
-      {
-        id: 'TXN-2024-0906-08',
-        date: '2024-09-06',
-        amount: 20.00,
-        description: 'WIFI DDN 768',
-        name: 'ALMERA DIGAMON',
-        employeeId: 'DDN005-SR768',
-        role: 'Teller',
-        boothCode: 'DDN-768',
-        location: 'PANABO',
-        datePeriodCover: '2024-09-06',
-        note: 'Wifi Allowance',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '20 - WIFI DDN 768 ALMERA DIGAMON (PANABO)'
-      },
-      {
-        id: 'TXN-2024-0906-09',
-        date: '2024-09-06',
-        amount: 1800.00,
-        description: 'RENT FEE SABONGAN NI NENE TIBAL-OG ST. TOMAS',
-        name: 'Davilyn Gelito',
-        employeeId: 'DDN005-SR762',
-        role: 'Teller',
-        boothCode: 'DDN-762',
-        location: 'Sto. Tomas',
-        datePeriodCover: 'AUG. 7, 2024 - SEP. 7, 2024',
-        note: 'Monthly Stall Rent Sabongan',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '1,800 - RENT FEE SABONGAN NI NENE TIBAL-OG ST. TOMAS (AUG. 7, 2024 - SEP. 7, 2024) DDN 762'
-      },
-      {
-        id: 'TXN-2024-0906-10',
-        date: '2024-09-06',
-        amount: 330.00,
-        description: 'POS LOAD /MONTH DDN 428',
-        name: 'Nobelyn Baya',
-        employeeId: 'DDN005-SR428',
-        role: 'Teller',
-        boothCode: 'DDN-428',
-        location: 'Carmen',
-        datePeriodCover: 'SEP 2024',
-        note: 'Data Plan SIM Load',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '330 - POS LOAD /MONTH DDN 428'
-      },
-      {
-        id: 'TXN-2024-0906-11',
-        date: '2024-09-06',
-        amount: 330.00,
-        description: 'POS LOAD /MONTH DDN 350',
-        name: 'Mary Lovelyn Ramos',
-        employeeId: 'DDN005-SR350',
-        role: 'Teller',
-        boothCode: 'DDN-350',
-        location: 'Tagum',
-        datePeriodCover: 'SEP 2024',
-        note: 'Data Plan SIM Load',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '330 - POS LOAD /MONTH DDN 350'
-      },
-      {
-        id: 'TXN-2024-0906-12',
-        date: '2024-09-06',
-        amount: 330.00,
-        description: 'POS LOAD /MONTH DDN 427',
-        name: 'Marnie Royo',
-        employeeId: 'DDN005-SR427',
-        role: 'Teller',
-        boothCode: 'DDN-427',
-        location: 'Carmen',
-        datePeriodCover: 'SEP 2024',
-        note: 'Data Plan SIM Load',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '330 - POS LOAD /MONTH DDN 427'
-      },
-      {
-        id: 'TXN-2024-0906-13',
-        date: '2024-09-06',
-        amount: 330.00,
-        description: 'POS LOAD /MONTH DDN 422',
-        name: 'Amerita Hipos',
-        employeeId: 'DDN005-SR422',
-        role: 'Teller',
-        boothCode: 'DDN-422',
-        location: 'Tagum',
-        datePeriodCover: 'SEP 2024',
-        note: 'Data Plan SIM Load',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '330 - POS LOAD /MONTH DDN 422'
-      },
-      {
-        id: 'TXN-2024-0906-14',
-        date: '2024-09-06',
-        amount: 330.00,
-        description: 'POS LOAD /MONTH DDN 351',
-        name: 'Beverly Alao',
-        employeeId: 'DDN005-SR351',
-        role: 'Teller',
-        boothCode: 'DDN-351',
-        location: 'Tagum',
-        datePeriodCover: 'SEP 2024',
-        note: 'Data Plan SIM Load',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '330 - POS LOAD /MONTH DDN 351'
-      },
-      {
-        id: 'TXN-2024-0906-15',
-        date: '2024-09-06',
-        amount: 330.00,
-        description: 'POS LOAD /MONTH DDN 1781',
-        name: 'Lenie Orillo',
-        employeeId: 'DDN005-SR1591',
-        role: 'Teller',
-        boothCode: 'DDN-1591',
-        location: 'Tagum',
-        datePeriodCover: 'SEP 2024',
-        note: 'Data Plan SIM Load (1781)',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '330 - POS LOAD /MONTH DDN 1781'
-      },
-      {
-        id: 'TXN-2024-0906-16',
-        date: '2024-09-06',
-        amount: 5000.00,
-        description: 'C.A. COLL. JASON',
-        name: 'JASON',
-        employeeId: 'DDN005-SC003',
-        role: 'Collector',
-        boothCode: '',
-        location: 'Carmen / Tagum',
-        datePeriodCover: '2024-09-06',
-        note: 'APPROVED BY: SIR JUNDY',
-        classification: 'CA',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '5,000 - C.A. COLL. JASON APPROVED BY: SIR JUNDY'
-      },
-      {
-        id: 'TXN-2024-0906-17',
-        date: '2024-09-06',
-        amount: 200.00,
-        description: 'PAYMENT COLL. MARK ANTHONY',
-        name: 'MARK ANTHONY (MAC2)',
-        employeeId: 'DDN005-SC004',
-        role: 'Collector',
-        boothCode: '',
-        location: 'Panabo City',
-        datePeriodCover: '2024-09-06',
-        note: 'Daily CA Deduction Payment (Applied to CA)',
-        classification: 'PAYMENT',
-        applyToCA: true,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '+ 200 - PAYMENT COLL. MARK ANTHONY'
-      },
-      {
-        id: 'TXN-2024-0906-18',
-        date: '2024-09-06',
-        amount: 29878.25,
-        description: 'COMM. SEP. 05, 2024',
-        name: 'General Settlement',
-        employeeId: 'DDN005-GEN',
-        role: 'General',
-        boothCode: 'HQ-DDN',
-        location: 'Davao Del Norte',
-        datePeriodCover: '2024-09-05',
-        note: 'Prior day commission carried over into deposit',
-        classification: 'OTHER',
-        applyToCA: false,
-        verificationStatus: 'VERIFIED',
-        ocrDocId: 'DOC-YPAD-20240906',
-        ocrRawText: '29,878.25 - COMM. SEP. 05, 2024'
-      }
-    ],
-    ocrDocuments: [
-      {
-        id: 'DOC-YPAD-20240906',
-        filename: 'Yellow_Pad_Ledger_2024-09-06.jpg',
-        uploadedAt: '2024-09-06 17:30',
-        reportDate: '2024-09-06',
-        fingerprint: 'fp_ypad_20240906_6075575',
-        rawTextSnapshot: 'SEP. 06. 2024\nCOMMISSION: 74, 776.50\nSALARY: 28, 200\nEXPENSES:\n1,200 - FUEL MOTOR\n400 - RENT MOTOR\n20 - WIFI DDN 1477 MELANIE SARAWI (TAGUM)\n30 - WIFI DDN 1782 MARYJANE FERNANDEZ (CARMEN)\n834 - DOOR BOLT 10PCS, DOOR HASH 5PCS, PADLOCK 5PCS FOR BOOTH\n4,600 - THERMAL PAPER 300 ROLLS.\n15 - WIFI DDN 1475 LUZVIMINDA GALASATAN (PANABO)\n20 - WIFI DDN 768 ALMERA DIGAMON (PANABO)\n1,800 - RENT FEE SABONGAN NI NENE TIBAL-OG ST. TOMAS (AUG. 7, 2024 - SEP. 7, 2024) DDN 762\n330 - POS LOAD /MONTH DDN 428\n330 - POS LOAD /MONTH DDN 350\n330 - POS LOAD /MONTH DDN 427\n330 - POS LOAD /MONTH DDN 422\n330 - POS LOAD /MONTH DDN 351\n330 - POS LOAD /MONTH DDN 1781\n5,000 - C.A. COLL. JASON  APPROVED BY: SIR JUNDY\n15,899 EXP.\n28,200 SAL.\n44,099 EXP. & SALARY\n74,776.50 COMM.\n30,677.50\n+ 200 - PAYMENT COLL. MARK ANTHONY\n29,878.25 - COMM. SEP. 05, 2024\n60,755.75 TOTAL COMM. FOR DEPOSIT.',
-        itemsCount: 18,
-        status: 'VERIFIED',
-        totalExpenses: 15899.00,
-        totalPayments: 200.00
-      }
-    ],
-    auditLogs: [
-      {
-        id: 'AUD-001',
-        timestamp: '2024-09-06 17:35:12',
-        eventType: 'OCR_IMPORT',
-        user: 'PJC (Supervisor)',
-        details: 'Imported 18 items from Yellow Pad Ledger (2024-09-06). Auto-verified.',
-        recordId: 'DOC-YPAD-20240906'
-      },
-      {
-        id: 'AUD-002',
-        timestamp: '2024-09-06 17:36:00',
-        eventType: 'CA_PAYMENT_APPLIED',
-        user: 'PJC (Supervisor)',
-        details: 'Applied ₱200 payment to MARK ANTHONY (MAC2) Cash Advance. Running CA reduced to ₱3,300.',
-        recordId: 'TXN-2024-0906-17'
-      }
-    ],
-    restDays: [
-      { id: 'RD-001', employeeId: 'DDN005-SR762', employeeName: 'Davilyn Gelito', role: 'Teller', boothCode: 'DDN-762', fixedRestDay: 'Monday', currentWeekDate: '2024-09-09', status: 'Approved', replacementEmployeeId: 'DDN005-SR767', replacementEmployeeName: 'Aprilyn V. Cahintong', reason: 'Regular Rest Day', approvedBy: 'SIR JUNDY' },
-      { id: 'DDN005-SC001', employeeId: 'DDN005-SC001', employeeName: 'JOHN', role: 'Collector', boothCode: 'Sto Tomas', fixedRestDay: 'Sunday', currentWeekDate: '2024-09-08', status: 'Approved', replacementEmployeeId: 'DDN005-SC005', replacementEmployeeName: 'Jayson Pacaña', reason: 'Sunday Rotation', approvedBy: 'SIR JUNDY' }
-    ],
-    manningCoverage: [
-      { day: 'Monday', collectorsOnDuty: 4, tellersOnDuty: 72, status: 'Full Manning' },
-      { day: 'Tuesday', collectorsOnDuty: 4, tellersOnDuty: 74, status: 'Full Manning' },
-      { day: 'Wednesday', collectorsOnDuty: 5, tellersOnDuty: 75, status: 'Full Manning' },
-      { day: 'Thursday', collectorsOnDuty: 5, tellersOnDuty: 76, status: 'Full Manning' },
-      { day: 'Friday', collectorsOnDuty: 5, tellersOnDuty: 77, status: 'Full Manning' },
-      { day: 'Saturday', collectorsOnDuty: 5, tellersOnDuty: 78, status: 'Peak Manning (Weekend)' },
-      { day: 'Sunday', collectorsOnDuty: 4, tellersOnDuty: 65, status: 'Essential Shifts Only' }
-    ],
-    eodLedger: [
-      { boothCode: 'DDN-762', teller: 'Davilyn Gelito', grossSales: 74776.50, payoutsClaims: 14020.75, expenses: 15899.00, netRemittance: 44856.75, expectedCash: 44856.75, actualCash: 44856.75, variance: 0, status: 'Balanced', posSerial: 'POS-DDN-762' },
-      { boothCode: 'DDN-352', teller: 'Jehramea Marte', grossSales: 48500.00, payoutsClaims: 9200.00, expenses: 1200.00, netRemittance: 38100.00, expectedCash: 38100.00, actualCash: 38100.00, variance: 0, status: 'Balanced', posSerial: 'POS-DDN-352' },
-      { boothCode: 'DDN-754', teller: 'Belle Amor Quizo', grossSales: 39800.00, payoutsClaims: 6400.00, expenses: 800.00, netRemittance: 32600.00, expectedCash: 32600.00, actualCash: 32600.00, variance: 0, status: 'Balanced', posSerial: 'POS-DDN-754' },
-      { boothCode: 'DDN-428', teller: 'Nobelyn Baya', grossSales: 52400.00, payoutsClaims: 11200.00, expenses: 330.00, netRemittance: 40870.00, expectedCash: 40870.00, actualCash: 40870.00, variance: 0, status: 'Balanced', posSerial: 'POS-DDN-428' }
-    ],
-    importHistory: [
-      {
-        id: "IMP-2026-001",
-        dateTime: "Sep 17, 2026, 09:30 AM",
-        fileName: "NORTH005_Staff_Master_Registry.xlsx",
-        user: "Peter John Carrillo",
-        totalRecords: 84,
-        added: 84,
-        updated: 0,
-        unchanged: 0,
-        issues: 0,
-        status: "Completed"
-      }
-    ]
+    pipelineCards: [],
+    transactions: [],
+    ocrDocuments: [],
+    auditLogs: [],
+    eodLedger: [],
+    importHistory: [],
+    deletedTransactionIds: [],
+    deletedOutletRentalIds: [],
+    outletRentals: [],
+    thermalPaperDailySummary: { stocksOnHand: 0, allocations: [] },
+    epSeedInitialized: true,
+    _accountabilitySeeded: true
   };
 }
 
@@ -1159,6 +737,69 @@ class Store {
   constructor() {
     this.data = this.load();
     this.listeners = [];
+    this.syncWithServer();
+  }
+
+  async syncWithServer() {
+    try {
+      if (typeof fetch !== 'function') return;
+      const res = await fetch('/api/transactions');
+      if (!res.ok) return;
+      const srv = await res.json();
+      if (!srv) return;
+
+      let changed = false;
+      if (srv.deletedTransactionIds && Array.isArray(srv.deletedTransactionIds)) {
+        if (!this.data.deletedTransactionIds) this.data.deletedTransactionIds = [];
+        srv.deletedTransactionIds.forEach(id => {
+          if (!this.data.deletedTransactionIds.includes(id)) {
+            this.data.deletedTransactionIds.push(id);
+            changed = true;
+          }
+        });
+      }
+      if (this.data.deletedTransactionIds && this.data.deletedTransactionIds.length > 0) {
+        const prevLen = (this.data.transactions || []).length;
+        this.data.transactions = (this.data.transactions || []).filter(t => t && !this.data.deletedTransactionIds.includes(t.id));
+        if (this.data.transactions.length !== prevLen) changed = true;
+      }
+      if (srv.transactions && Array.isArray(srv.transactions) && srv.transactions.length > 0 && (!this.data.transactions || this.data.transactions.length === 0) && !this.data.epSeedInitialized) {
+        this.data.transactions = srv.transactions.filter(t => !this.data.deletedTransactionIds.includes(t.id));
+        changed = true;
+      }
+
+      // Sync Outlet Rentals & Load Allowance with Server
+      try {
+        const orRes = await fetch('/api/outlet-rentals');
+        if (orRes.ok) {
+          const orSrv = await orRes.json();
+          if (orSrv) {
+            if (orSrv.deletedOutletRentalIds && Array.isArray(orSrv.deletedOutletRentalIds)) {
+              if (!this.data.deletedOutletRentalIds) this.data.deletedOutletRentalIds = [];
+              orSrv.deletedOutletRentalIds.forEach(id => {
+                if (!this.data.deletedOutletRentalIds.includes(id)) {
+                  this.data.deletedOutletRentalIds.push(id);
+                  changed = true;
+                }
+              });
+            }
+            if (this.data.deletedOutletRentalIds && this.data.deletedOutletRentalIds.length > 0) {
+              const prevOrLen = (this.data.outletRentals || []).length;
+              this.data.outletRentals = (this.data.outletRentals || []).filter(r => r && !this.data.deletedOutletRentalIds.includes(r.id));
+              if (this.data.outletRentals.length !== prevOrLen) changed = true;
+            }
+            if (orSrv.outletRentals && Array.isArray(orSrv.outletRentals) && orSrv.outletRentals.length > 0 && (!this.data.outletRentals || this.data.outletRentals.length === 0)) {
+              this.data.outletRentals = orSrv.outletRentals.filter(r => !this.data.deletedOutletRentalIds.includes(r.id));
+              changed = true;
+            }
+          }
+        }
+      } catch (eOr) {}
+
+      if (changed) {
+        this.save();
+      }
+    } catch (e) {}
   }
 
   load() {
@@ -1168,6 +809,22 @@ class Store {
         const parsed = JSON.parse(stored);
         if (parsed && parsed.employees && parsed.employees.length > 50) {
           let needsSave = false;
+          if (!parsed.deletedTransactionIds) parsed.deletedTransactionIds = [];
+          if (parsed.transactions && Array.isArray(parsed.transactions)) {
+            const originalCount = parsed.transactions.length;
+            parsed.transactions = parsed.transactions.filter(t => t && !parsed.deletedTransactionIds.includes(t.id));
+            if (parsed.transactions.length !== originalCount) needsSave = true;
+          }
+
+          if (!parsed.deletedOutletRentalIds) parsed.deletedOutletRentalIds = [];
+          if (!parsed.outletRentals) {
+            parsed.outletRentals = [];
+            needsSave = true;
+          } else if (Array.isArray(parsed.outletRentals)) {
+            const originalOrCount = parsed.outletRentals.length;
+            parsed.outletRentals = parsed.outletRentals.filter(r => r && !parsed.deletedOutletRentalIds.includes(r.id));
+            if (parsed.outletRentals.length !== originalOrCount) needsSave = true;
+          }
 
           // Permanently eradicate fake Buffer Relievers
           if (parsed.relievers && parsed.relievers.length > 0) {
@@ -1259,15 +916,40 @@ class Store {
             });
           }
 
-          // Ensure all employees and relievers have guaranteed unique, valid IDs and standardized statuses
+          // Ensure all employees and relievers have guaranteed unique, valid IDs and standardized statuses without duplicates
           const seenIds = new Set();
+          const seenStaffKeys = new Set();
           let relSeq = 1;
           let staffSeq = 1;
 
           if (parsed.employees && Array.isArray(parsed.employees)) {
+            const cleanEmployees = [];
             parsed.employees.forEach(e => {
+              if (!e) return;
+              const normName = (e.name || '').trim().toLowerCase();
+              const bCode = (e.boothCode || e.booth || '').trim().toUpperCase();
+              const roleNorm = (e.role || '').trim().toUpperCase();
+
+              // Skip empty/ghost records or orphan booth rows
+              if (!normName && !bCode) {
+                needsSave = true;
+                return;
+              }
+              if (e.id === 'BOOTH-DDN-1140' || (e.name === 'N/A' && e.boothCode === 'DDN-1140')) {
+                needsSave = true;
+                return; // Purge orphan booth row!
+              }
+
+              // Deduplication key: normalized name + boothCode (or role for staff without booth)
+              const dedupKey = normName ? `${normName}::${bCode || roleNorm}` : `id::${e.id}`;
+              if (seenStaffKeys.has(dedupKey)) {
+                needsSave = true;
+                return; // Discard duplicate employee record!
+              }
+              seenStaffKeys.add(dedupKey);
+
               let id = (e.id || '').trim();
-              const isRel = (e.role || '').toUpperCase().includes('RELIEVER') || (e.role || '').toUpperCase().includes('RELIVER');
+              const isRel = roleNorm.includes('RELIEVER') || roleNorm.includes('RELIVER');
               if (!id || id === 'N/A' || id === '-' || seenIds.has(id)) {
                 let genId;
                 const prefix = isRel ? 'DDN005-REL' : 'DDN005-SR';
@@ -1285,7 +967,13 @@ class Store {
               if (sUp === 'TERMINATED') e.status = 'TERMINATED';
               else if (sUp === 'INACTIVE') e.status = 'INACTIVE';
               else e.status = 'ACTIVE';
+
+              cleanEmployees.push(e);
             });
+            if (cleanEmployees.length !== parsed.employees.length) {
+              parsed.employees = cleanEmployees;
+              needsSave = true;
+            }
           }
 
           if (parsed.relievers && Array.isArray(parsed.relievers)) {
@@ -1325,231 +1013,23 @@ class Store {
             parsed.importHistory = fresh.importHistory;
             needsSave = true;
           }
-          // Ensure transactions are updated with the new classification schema if needed
-          if (!parsed.transactions || parsed.transactions.length < 15 || !parsed.transactions[0].classification) {
-            const fresh = buildDefaultStore();
-            parsed.transactions = fresh.transactions;
+          // Ensure transactions array exists and normalize classifications without ever overwriting user data
+          if (!parsed.transactions) {
+            parsed.transactions = [];
             needsSave = true;
-          }
-
-          // Ensure Jenyva H. Tura and Collector John obligations are initialized for Employee Accountability (ONE-TIME ONLY)
-          const hasAccountability = parsed._accountabilitySeeded ||
-            (parsed.transactions && parsed.transactions.some(t => {
-              const u = (t.name || '').toUpperCase();
-              return u.includes('JENYVA') || u.includes('JUVYLYN') || (t.id && (t.id.includes('JENYVA') || t.id.includes('TURA')));
-            }));
-
-          if (!hasAccountability && (!parsed.transactions || parsed.transactions.length === 0)) {
-            parsed._accountabilitySeeded = true;
-            const accountabilitySeedTxns = [
-              {
-                id: 'TXN-2026-0924-JENYVA-01',
-                date: '2026-09-24',
-                amount: 1140.00,
-                description: 'SHORT TELLER - JENYVA H. TURA',
-                name: 'JENYVA H. TURA',
-                employeeId: 'DDN005-SR1140',
-                role: 'Teller',
-                boothCode: 'DDN-1140',
-                location: 'Davao Del Norte',
-                datePeriodCover: '2026-09-24',
-                note: 'Initial cash shortage detected from daily ledger',
-                classification: 'SHORT',
-                transactionType: 'SHORT_TELLER',
-                applyToCA: false,
-                appliedTo: 'Shortage',
-                verificationStatus: 'VERIFIED',
-                ocrDocId: 'DOC-YPAD-20260924'
-              },
-              {
-                id: 'TXN-2026-0925-JENYVA-02',
-                date: '2026-09-25',
-                amount: 200.00,
-                description: 'PAYMENT - SHORT - JENYVA H. TURA',
-                name: 'JENYVA H. TURA',
-                employeeId: 'DDN005-SR1140',
-                role: 'Teller',
-                boothCode: 'DDN-1140',
-                location: 'Davao Del Norte',
-                datePeriodCover: '2026-09-25',
-                note: 'Partial shortage settlement payment',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: false,
-                appliedTo: 'Short Teller',
-                verificationStatus: 'VERIFIED'
-              },
-              {
-                id: 'TXN-2026-0926-JENYVA-03',
-                date: '2026-09-26',
-                amount: 200.00,
-                description: 'PAYMENT - SHORT - JENYVA H. TURA',
-                name: 'JENYVA H. TURA',
-                employeeId: 'DDN005-SR1140',
-                role: 'Teller',
-                boothCode: 'DDN-1140',
-                location: 'Davao Del Norte',
-                datePeriodCover: '2026-09-26',
-                note: 'Partial shortage settlement payment',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: false,
-                appliedTo: 'Short Teller',
-                verificationStatus: 'VERIFIED'
-              },
-              {
-                id: 'TXN-2026-0927-JENYVA-04',
-                date: '2026-09-27',
-                amount: 300.00,
-                description: 'PAYMENT - SHORT - JENYVA H. TURA',
-                name: 'JENYVA H. TURA',
-                employeeId: 'DDN005-SR1140',
-                role: 'Teller',
-                boothCode: 'DDN-1140',
-                location: 'Davao Del Norte',
-                datePeriodCover: '2026-09-27',
-                note: 'Partial shortage settlement payment',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: false,
-                appliedTo: 'Short Teller',
-                verificationStatus: 'VERIFIED'
-              },
-              {
-                id: 'TXN-2026-0928-JENYVA-05',
-                date: '2026-09-28',
-                amount: 440.00,
-                description: 'PAYMENT - SHORT - JENYVA H. TURA',
-                name: 'JENYVA H. TURA',
-                employeeId: 'DDN005-SR1140',
-                role: 'Teller',
-                boothCode: 'DDN-1140',
-                location: 'Davao Del Norte',
-                datePeriodCover: '2026-09-28',
-                note: 'Final settlement payment - Fully Settled',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: false,
-                appliedTo: 'Short Teller',
-                verificationStatus: 'VERIFIED'
-              },
-              // Collector John Cash Advance (₱2,000 CA, Sep 25 ₱500, Sep 26 ₱500, Sep 27 ₱1,000)
-              {
-                id: 'TXN-2026-0924-JOHN-CA-01',
-                date: '2026-09-24',
-                amount: 2000.00,
-                description: 'C.A. - COLL. JOHN',
-                name: 'JOHN',
-                employeeId: 'DDN005-SC001',
-                role: 'Collector',
-                boothCode: '',
-                location: 'Field Route',
-                datePeriodCover: '2026-09-24',
-                note: 'Collector Cash Advance approved by Sir Jundy',
-                classification: 'CA',
-                transactionType: 'CASH_ADVANCE',
-                applyToCA: false,
-                appliedTo: 'C.A.',
-                verificationStatus: 'VERIFIED',
-                ocrDocId: 'DOC-YPAD-20260924'
-              },
-              {
-                id: 'TXN-2026-0925-JOHN-CA-02',
-                date: '2026-09-25',
-                amount: 500.00,
-                description: 'PAYMENT - C.A. - COLL. JOHN',
-                name: 'JOHN',
-                employeeId: 'DDN005-SC001',
-                role: 'Collector',
-                boothCode: '',
-                location: 'Field Route',
-                datePeriodCover: '2026-09-25',
-                note: 'Partial C.A. deduction payment',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: true,
-                appliedTo: 'C.A.',
-                verificationStatus: 'VERIFIED'
-              },
-              {
-                id: 'TXN-2026-0926-JOHN-CA-03',
-                date: '2026-09-26',
-                amount: 500.00,
-                description: 'PAYMENT - C.A. - COLL. JOHN',
-                name: 'JOHN',
-                employeeId: 'DDN005-SC001',
-                role: 'Collector',
-                boothCode: '',
-                location: 'Field Route',
-                datePeriodCover: '2026-09-26',
-                note: 'Partial C.A. deduction payment',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: true,
-                appliedTo: 'C.A.',
-                verificationStatus: 'VERIFIED'
-              },
-              {
-                id: 'TXN-2026-0927-JOHN-CA-04',
-                date: '2026-09-27',
-                amount: 1000.00,
-                description: 'PAYMENT - C.A. - COLL. JOHN',
-                name: 'JOHN',
-                employeeId: 'DDN005-SC001',
-                role: 'Collector',
-                boothCode: '',
-                location: 'Field Route',
-                datePeriodCover: '2026-09-27',
-                note: 'Final C.A. settlement payment - Fully Settled',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: true,
-                appliedTo: 'C.A.',
-                verificationStatus: 'VERIFIED'
-              },
-              // Collector John Separate Short Teller (Original ₱300, Paid ₱100, Outstanding ₱200) - Requirement #16
-              {
-                id: 'TXN-2026-0924-JOHN-SH-01',
-                date: '2026-09-24',
-                amount: 300.00,
-                description: 'SHORT TELLER - COLL. JOHN',
-                name: 'JOHN',
-                employeeId: 'DDN005-SC001',
-                role: 'Collector',
-                boothCode: '',
-                location: 'Field Route',
-                datePeriodCover: '2026-09-24',
-                note: 'Shortage incurred on collection route',
-                classification: 'SHORT',
-                transactionType: 'SHORT_TELLER',
-                applyToCA: false,
-                appliedTo: 'Shortage',
-                verificationStatus: 'VERIFIED'
-              },
-              {
-                id: 'TXN-2026-0925-JOHN-SH-02',
-                date: '2026-09-25',
-                amount: 100.00,
-                description: 'PAYMENT - SHORT - COLL. JOHN',
-                name: 'JOHN',
-                employeeId: 'DDN005-SC001',
-                role: 'Collector',
-                boothCode: '',
-                location: 'Field Route',
-                datePeriodCover: '2026-09-25',
-                note: 'Shortage deduction payment',
-                classification: 'PAYMENT',
-                transactionType: 'PAYMENT',
-                applyToCA: false,
-                appliedTo: 'Short Teller',
-                verificationStatus: 'VERIFIED'
+          } else if (Array.isArray(parsed.transactions)) {
+            parsed.transactions.forEach(t => {
+              if (t && !t.classification) {
+                if (t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'))) t.classification = 'SHORT';
+                else if (t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'))) t.classification = 'CA';
+                else if (t.type === 'PAYMENT') t.classification = 'PAYMENT';
+                else t.classification = 'OTHER';
+                needsSave = true;
               }
-            ];
-            parsed.transactions = [...accountabilitySeedTxns, ...(parsed.transactions || [])];
-            needsSave = true;
-          } else {
-            parsed._accountabilitySeeded = true;
+            });
           }
+
+          parsed._accountabilitySeeded = true;
 
           // Deduplicate any repeated transactions with identical IDs
           if (parsed.transactions && Array.isArray(parsed.transactions)) {
@@ -1592,13 +1072,128 @@ class Store {
   }
 
   save(data = this.data) {
+    if (this._isSaving) return;
+    this._isSaving = true;
     try {
       this.data = data;
+      if (this.data.deletedTransactionIds && this.data.deletedTransactionIds.length > 0) {
+        const delTxnSet = new Set(this.data.deletedTransactionIds);
+        this.data.transactions = (this.data.transactions || []).filter(t => t && !delTxnSet.has(t.id));
+      }
+      if (this.data.deletedOutletRentalIds && this.data.deletedOutletRentalIds.length > 0) {
+        const delSet = new Set(this.data.deletedOutletRentalIds);
+        this.data.outletRentals = (this.data.outletRentals || []).filter(r => {
+          if (!r) return false;
+          if (delSet.has(r.id)) return false;
+          if (r.sourceTxnId && delSet.has(r.sourceTxnId)) return false;
+          if (typeof r.id === 'string') {
+            if (r.id.startsWith('ORL-') && delSet.has(r.id.replace(/^ORL-/, ''))) return false;
+            if (delSet.has('ORL-' + r.id)) return false;
+          }
+          return true;
+        });
+      }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
       this.notify();
+      try {
+        if (typeof fetch === 'function') {
+          fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transactions: this.data.transactions,
+              deletedTransactionIds: this.data.deletedTransactionIds || []
+            })
+          }).catch(() => {});
+
+          fetch('/api/outlet-rentals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              outletRentals: this.data.outletRentals || [],
+              deletedOutletRentalIds: this.data.deletedOutletRentalIds || []
+            })
+          }).catch(() => {});
+        }
+      } catch (e) {}
     } catch (e) {
       console.error('Failed to save store:', e);
+    } finally {
+      this._isSaving = false;
     }
+  }
+
+  getOutletRentals() {
+    if (!this.data.outletRentals) this.data.outletRentals = [];
+    if (this.data.deletedOutletRentalIds && this.data.deletedOutletRentalIds.length > 0) {
+      const delSet = new Set(this.data.deletedOutletRentalIds);
+      this.data.outletRentals = this.data.outletRentals.filter(r => {
+        if (!r) return false;
+        if (delSet.has(r.id)) return false;
+        if (r.sourceTxnId && delSet.has(r.sourceTxnId)) return false;
+        if (typeof r.id === 'string' && r.id.startsWith('ORL-') && delSet.has(r.id.replace(/^ORL-/, ''))) return false;
+        return true;
+      });
+    }
+    return this.data.outletRentals;
+  }
+
+  saveOutletRental(record) {
+    if (!record || !record.id) return;
+    if (!this.data.outletRentals) this.data.outletRentals = [];
+    const idx = this.data.outletRentals.findIndex(r => r.id === record.id);
+    if (idx >= 0) {
+      this.data.outletRentals[idx] = { ...this.data.outletRentals[idx], ...record, updatedAt: new Date().toISOString() };
+    } else {
+      this.data.outletRentals.push({ ...record, createdAt: new Date().toISOString() });
+    }
+    this.save();
+  }
+
+  deleteOutletRental(id) {
+    if (!id) return;
+    if (!this.data.deletedOutletRentalIds) this.data.deletedOutletRentalIds = [];
+    if (!this.data.deletedOutletRentalIds.includes(id)) {
+      this.data.deletedOutletRentalIds.push(id);
+    }
+    const cleanId = id.startsWith('ORL-') ? id.replace(/^ORL-/, '') : ('ORL-' + id);
+    if (!this.data.deletedOutletRentalIds.includes(cleanId)) {
+      this.data.deletedOutletRentalIds.push(cleanId);
+    }
+    if (this.data.outletRentals) {
+      this.data.outletRentals = this.data.outletRentals.filter(r => {
+        if (!r) return false;
+        return r.id !== id && r.id !== cleanId && r.sourceTxnId !== id && r.sourceTxnId !== cleanId;
+      });
+    }
+    this.save();
+    try {
+      if (typeof fetch === 'function') {
+        fetch(`/api/outlet-rentals?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+      }
+    } catch (e) {}
+    return true;
+  }
+
+  resetOperationalData() {
+    this.data.transactions = [];
+    this.data.deletedTransactionIds = [];
+    this.data.pipelineCards = [];
+    this.data.eodLedger = [];
+    this.data.ocrDocuments = [];
+    this.data.auditLogs = [];
+    this.data.outletRentals = [];
+    this.data.deletedOutletRentalIds = [];
+    this.data.thermalPaperDailySummary = { stocksOnHand: 0, allocations: [] };
+    this.data.epSeedInitialized = true;
+    this.data._accountabilitySeeded = true;
+    this.save();
+    try {
+      if (typeof fetch === 'function') {
+        fetch('/api/reset-operational-data', { method: 'POST' }).catch(() => {});
+      }
+    } catch (e) {}
+    this.notify();
   }
 
   resetToDefault() {
@@ -1617,10 +1212,17 @@ class Store {
   }
 
   notify() {
-    if (!this.listeners) this.listeners = [];
-    this.listeners.forEach(fn => {
-      try { fn(this.data); } catch (err) { console.error('Listener err:', err); }
-    });
+    if (this._isNotifying) return;
+    this._isNotifying = true;
+    try {
+      if (!this.listeners) this.listeners = [];
+      const listenersCopy = [...this.listeners];
+      listenersCopy.forEach(fn => {
+        try { fn(this.data); } catch (err) { console.error('Listener err:', err); }
+      });
+    } finally {
+      this._isNotifying = false;
+    }
   }
 
   getSettings() { return this.data.settings; }
@@ -1640,8 +1242,6 @@ class Store {
   getTransactions() { return this.data.transactions || []; }
   getOcrDocuments() { return this.data.ocrDocuments || []; }
   getAuditLogs() { return this.data.auditLogs || []; }
-  getRestDays() { return this.data.restDays; }
-  getManningCoverage() { return this.data.manningCoverage; }
   getPipelineStages() { return this.data.pipelineStages; }
   getPipelineCards() { return this.data.pipelineCards; }
   getEodLedger() { return this.data.eodLedger; }
@@ -2069,17 +1669,38 @@ class Store {
   }
 
   deleteTransaction(id) {
-    const txn = this.data.transactions.find(t => t.id === id);
-    this.data.transactions = this.data.transactions.filter(t => t.id !== id);
+    if (!id) return;
+    if (!this.data.deletedTransactionIds) this.data.deletedTransactionIds = [];
+    if (!this.data.deletedTransactionIds.includes(id)) {
+      this.data.deletedTransactionIds.push(id);
+    }
+    const txn = (this.data.transactions || []).find(t => t.id === id);
+    this.data.transactions = (this.data.transactions || []).filter(t => t && t.id !== id);
+
+    // Also remove from outletRentals if linked
+    if (!this.data.deletedOutletRentalIds) this.data.deletedOutletRentalIds = [];
+    if (!this.data.deletedOutletRentalIds.includes(id)) this.data.deletedOutletRentalIds.push(id);
+    if (!this.data.deletedOutletRentalIds.includes(`ORL-${id}`)) this.data.deletedOutletRentalIds.push(`ORL-${id}`);
+    if (this.data.outletRentals) {
+      this.data.outletRentals = this.data.outletRentals.filter(r => r && r.id !== id && r.id !== `ORL-${id}` && r.sourceTxnId !== id);
+    }
+
     if (txn) {
       this.addAuditLog({
         eventType: 'TXN_DELETED',
         user: 'PJC (Supervisor)',
-        details: `Deleted ${txn.classification} transaction (${id}) for ${txn.name}`,
+        details: `Deleted ${txn.classification || txn.type || 'transaction'} (${id}) for ${txn.name || 'Staff'}`,
         recordId: id
       });
     }
     this.save();
+    try {
+      if (typeof fetch === 'function') {
+        fetch(`/api/transactions?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+        fetch(`/api/outlet-rentals?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+        fetch(`/api/outlet-rentals?id=${encodeURIComponent('ORL-' + id)}`, { method: 'DELETE' }).catch(() => {});
+      }
+    } catch (e) {}
   }
 
   // Method to check if an employee has valid GPS coordinates (Latitude -90 to 90, Longitude -180 to 180)
@@ -2142,48 +1763,82 @@ class Store {
   }
 
   sanitizeEmployeeIds() {
-    const seenIds = new Set();
-    let relSeq = 1;
-    let staffSeq = 1;
-    let modified = false;
+    if (this._isSanitizing) return;
+    this._isSanitizing = true;
+    try {
+      const seenIds = new Set();
+      const seenStaffKeys = new Set();
+      let relSeq = 1;
+      let staffSeq = 1;
+      let modified = false;
 
-    if (this.data.employees && Array.isArray(this.data.employees)) {
-      this.data.employees.forEach(e => {
-        let id = (e.id || '').trim();
-        const isRel = (e.role || '').toUpperCase().includes('RELIEVER') || (e.role || '').toUpperCase().includes('RELIVER');
-        if (!id || id === 'N/A' || id === '-' || seenIds.has(id)) {
-          let genId;
-          const prefix = isRel ? 'DDN005-REL' : 'DDN005-SR';
-          do {
-            const num = isRel ? String(relSeq++).padStart(3, '0') : String(staffSeq++).padStart(4, '0');
-            genId = `${prefix}${num}`;
-          } while (seenIds.has(genId));
-          e.id = genId;
-          id = genId;
-          modified = true;
-        }
-        seenIds.add(id);
+      if (this.data.employees && Array.isArray(this.data.employees)) {
+        const origLen = this.data.employees.length;
+        const cleanEmployees = [];
+        this.data.employees.forEach(e => {
+          if (!e) return;
+          const normName = (e.name || '').trim().toLowerCase();
+          const bCode = (e.boothCode || e.booth || '').trim().toUpperCase();
+          const roleNorm = (e.role || '').trim().toUpperCase();
 
-        const sUp = (e.status || 'ACTIVE').toUpperCase();
-        const normStatus = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
-        if (e.status !== normStatus) {
-          e.status = normStatus;
-          modified = true;
-        }
-
-        // Clean up corrupted collector purok values in localStorage
-        if (e.purok === 'Tagum / Kapalong /' || e.purok === 'Carmen /' || (typeof e.purok === 'string' && e.purok.trim().endsWith('/'))) {
-          e.purok = '-';
-          if ((e.role || '').toUpperCase().includes('COLLECTOR')) {
-            if (e.id === 'DDN005-SC002') e.municipality = 'Tagum / Kapalong / Talaingod';
-            else if (e.id === 'DDN005-SC003') e.municipality = 'Carmen / Tagum';
-            else if (e.area) e.municipality = e.area;
-            e.address = e.municipality;
+          if (!normName && !bCode) {
+            modified = true;
+            return;
           }
+          if (e.id === 'BOOTH-DDN-1140' || (e.name === 'N/A' && e.boothCode === 'DDN-1140')) {
+            modified = true;
+            return; // Prune orphan booth row!
+          }
+
+          const dedupKey = normName ? `${normName}::${bCode || roleNorm}` : `id::${e.id}`;
+          if (seenStaffKeys.has(dedupKey)) {
+            modified = true;
+            return; // Prune duplicate employee record!
+          }
+          seenStaffKeys.add(dedupKey);
+
+          let id = (e.id || '').trim();
+          const isRel = roleNorm.includes('RELIEVER') || roleNorm.includes('RELIVER');
+          if (!id || id === 'N/A' || id === '-' || seenIds.has(id)) {
+            let genId;
+            const prefix = isRel ? 'DDN005-REL' : 'DDN005-SR';
+            do {
+              const num = isRel ? String(relSeq++).padStart(3, '0') : String(staffSeq++).padStart(4, '0');
+              genId = `${prefix}${num}`;
+            } while (seenIds.has(genId));
+            e.id = genId;
+            id = genId;
+            modified = true;
+          }
+          seenIds.add(id);
+
+          const sUp = (e.status || 'ACTIVE').toUpperCase();
+          const normStatus = sUp === 'TERMINATED' ? 'TERMINATED' : (sUp === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+          if (e.status !== normStatus) {
+            e.status = normStatus;
+            modified = true;
+          }
+
+          // Clean up corrupted collector purok values in localStorage
+          if (e.purok === 'Tagum / Kapalong /' || e.purok === 'Carmen /' || (typeof e.purok === 'string' && e.purok.trim().endsWith('/'))) {
+            e.purok = '-';
+            if ((e.role || '').toUpperCase().includes('COLLECTOR')) {
+              if (e.id === 'DDN005-SC002') e.municipality = 'Tagum / Kapalong / Talaingod';
+              else if (e.id === 'DDN005-SC003') e.municipality = 'Carmen / Tagum';
+              else if (e.area) e.municipality = e.area;
+              e.address = e.municipality;
+            }
+            modified = true;
+          }
+
+          cleanEmployees.push(e);
+        });
+
+        if (cleanEmployees.length !== origLen) {
+          this.data.employees = cleanEmployees;
           modified = true;
         }
-      });
-    }
+      }
 
     if (this.data.relievers && Array.isArray(this.data.relievers)) {
       this.data.relievers.forEach(r => {
@@ -2215,10 +1870,37 @@ class Store {
       });
     }
 
+    if (this.data.booths && Array.isArray(this.data.booths)) {
+      const origBoothsLen = this.data.booths.length;
+      // Purge orphan BOOTH-DDN-1140 and any orphan booth duplicating an active employee booth
+      const activeEmpBooths = new Set();
+      (this.data.employees || []).forEach(emp => {
+        const bC = (emp.boothCode && emp.boothCode !== '-') ? emp.boothCode.trim().toUpperCase() : (emp.booth && emp.booth !== '-' ? emp.booth.trim().toUpperCase() : null);
+        if (bC) activeEmpBooths.add(bC);
+      });
+
+      this.data.booths = this.data.booths.filter(b => {
+        if (!b || !b.id) return false;
+        if (b.id === 'BOOTH-DDN-1140') return false;
+        if (b.id.startsWith('BOOTH-')) {
+          const raw = b.id.replace(/^BOOTH-/, '').toUpperCase();
+          if (activeEmpBooths.has(raw)) return false;
+        }
+        return true;
+      });
+
+      if (this.data.booths.length !== origBoothsLen) {
+        modified = true;
+      }
+    }
+
     if (modified) {
       this.save();
     }
+  } finally {
+    this._isSanitizing = false;
   }
+}
 
   addEmployee(emp) {
     emp.id = emp.id || `DDN005-SR${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2338,36 +2020,46 @@ class Store {
       }
     }
 
-    // Synchronize booth assignments
+    // Synchronize booth assignments with Rule: ONE BOOTH CODE = ONE ACTIVE BOOTH RECORD
     if (this.data.booths) {
-      const newBoothCode = updates.boothCode || (result ? (result.boothCode || result.booth) : null);
-      // If booth changed, unassign from old booth
-      if (oldBoothCode && oldBoothCode !== '-' && newBoothCode && oldBoothCode !== newBoothCode) {
-        const oldB = this.data.booths.find(b => b.id === oldBoothCode && b.assignedTellerId === id);
+      const newBoothCode = updates.boothCode !== undefined ? updates.boothCode : (updates.booth !== undefined ? updates.booth : (result ? (result.boothCode || result.booth) : null));
+      const cleanNewBoothCode = (newBoothCode && newBoothCode !== '-') ? String(newBoothCode).trim().toUpperCase().replace(/^BOOTH-/, '') : null;
+      const cleanOldBoothCode = (oldBoothCode && oldBoothCode !== '-') ? String(oldBoothCode).trim().toUpperCase().replace(/^BOOTH-/, '') : null;
+
+      // 1. If booth changed, unassign from old booth
+      if (cleanOldBoothCode && cleanNewBoothCode && cleanOldBoothCode !== cleanNewBoothCode) {
+        const oldB = this.data.booths.find(b => (b.id || '').toUpperCase().replace(/^BOOTH-/, '') === cleanOldBoothCode);
         if (oldB) {
           oldB.assignedTellerId = null;
           oldB.assignedTellerName = '';
           oldB.activeTeller = '';
+          oldB.status = 'INACTIVE';
         }
       }
 
-      if (newBoothCode && newBoothCode !== '-') {
-        let b = this.data.booths.find(b => b.id === newBoothCode || b.assignedTellerId === id || b.assignedTellerId === targetId);
+      // 2. Assign to new booth (ONLY match by exact clean booth code, NEVER match by old teller ID!)
+      if (cleanNewBoothCode) {
+        // Remove any orphan duplicate booth records with BOOTH- prefix
+        this.data.booths = this.data.booths.filter(b => b.id !== `BOOTH-${cleanNewBoothCode}` && b.id !== 'BOOTH-DDN-1140');
+
+        let b = this.data.booths.find(b => (b.id || '').toUpperCase().replace(/^BOOTH-/, '') === cleanNewBoothCode);
         if (!b) {
           b = {
-            id: newBoothCode,
-            name: `Station ${newBoothCode}`,
+            id: cleanNewBoothCode,
+            name: `Station ${cleanNewBoothCode}`,
             area: (result && result.address) || `${(result && result.purok) || '-'}, ${(result && result.municipality) || 'Sto. Tomas'}`,
             purok: (result && result.purok) || '-',
             municipality: (result && result.municipality) || 'Sto. Tomas',
             lat: result ? result.lat : null,
             lng: result ? result.lng : null,
             status: (result && result.status) || 'Active',
-            posSerial: (result && result.posSerial) || `POS-${newBoothCode}`,
+            posSerial: (result && result.posSerial) || `POS-${cleanNewBoothCode}`,
             printerSerial: (result && result.printerSerial) || 'N/A'
           };
           this.data.booths.push(b);
         }
+
+        b.id = cleanNewBoothCode;
         b.assignedTellerId = targetId;
         if (result && result.name) {
           b.assignedTellerName = result.name;
@@ -2389,10 +2081,37 @@ class Store {
   }
 
   deleteEmployee(id) {
-    this.data.employees = this.data.employees.filter(e => e.id !== id);
-    if (this.data.relievers) {
-      this.data.relievers = this.data.relievers.filter(r => r.id !== id);
+    if (!id) return;
+    const cleanId = String(id).trim();
+    const cleanBoothCode = cleanId.replace(/^BOOTH-/, '').toUpperCase();
+
+    // 1. Remove from employees
+    if (this.data.employees) {
+      this.data.employees = this.data.employees.filter(e => {
+        if (!e) return false;
+        if (e.id === cleanId) return false;
+        const eBooth = (e.boothCode || e.booth || '').replace(/^BOOTH-/, '').toUpperCase();
+        if (eBooth && eBooth === cleanBoothCode && (!e.name || e.name === 'N/A' || e.name === '-')) return false;
+        return true;
+      });
     }
+
+    // 2. Remove from relievers
+    if (this.data.relievers) {
+      this.data.relievers = this.data.relievers.filter(r => r && r.id !== cleanId);
+    }
+
+    // 3. Remove from booths
+    if (this.data.booths) {
+      this.data.booths = this.data.booths.filter(b => {
+        if (!b) return false;
+        if (b.id === cleanId || b.id === `BOOTH-${cleanBoothCode}`) return false;
+        const bCode = (b.id || b.code || '').replace(/^BOOTH-/, '').toUpperCase();
+        if (bCode && bCode === cleanBoothCode) return false;
+        return true;
+      });
+    }
+
     this.save();
   }
 
@@ -2684,15 +2403,15 @@ class Store {
 
   addTransaction(txn) {
     txn.id = txn.id || `TXN-${Date.now().toString().slice(-6)}`;
+    // Enforce Collector Rule: Collectors NEVER have Booth Codes
+    if ((txn.role || '').toUpperCase() === 'COLLECTOR') {
+      txn.boothCode = '';
+    }
     this.data.transactions.unshift(txn);
     this.save();
     return txn;
   }
 
-  deleteTransaction(id) {
-    this.data.transactions = this.data.transactions.filter(t => t.id !== id);
-    this.save();
-  }
 
   getNextPropertyNo() {
     const list = this.data.inventory || [];
@@ -2904,24 +2623,6 @@ class Store {
     return this.archiveInventoryProperty(id, 'Removed by operator');
   }
 
-  addRestDayRequest(req) {
-    req.id = req.id || `RD-${Date.now().toString().slice(-4)}`;
-    this.data.restDays.unshift(req);
-    this.save();
-    return req;
-  }
-
-  updateRestDayStatus(id, status, approvedBy = 'SIR JUNDY') {
-    const idx = this.data.restDays.findIndex(r => r.id === id);
-    if (idx !== -1) {
-      this.data.restDays[idx].status = status;
-      this.data.restDays[idx].approvedBy = approvedBy;
-      this.save();
-      return this.data.restDays[idx];
-    }
-    return null;
-  }
-
   movePipelineCard(cardId, newStage) {
     const card = this.data.pipelineCards.find(c => c.id === cardId);
     if (card) {
@@ -2966,9 +2667,9 @@ class Store {
 
     txns.forEach(t => {
       const amt = Number(t.amount) || 0;
-      if (t.type === 'Income' || (!t.type && t.amount > 10000)) {
+      if (t.type === 'COLLECTION' || t.classification === 'INCOME' || t.type === 'Income') {
         totalIncome += amt;
-      } else {
+      } else if (t.isExpense || t.classification === 'OTHER' || t.type === 'EXPENSE') {
         totalExpenses += amt;
         if (t.classification === 'CA' || (t.description && t.description.toLowerCase().includes('bonus'))) {
           totalBonuses += amt;
@@ -2976,17 +2677,12 @@ class Store {
       }
     });
 
-    // Provide robust operational fallbacks for baseline presentation
-    if (totalIncome === 0) totalIncome = 301500;
-    if (totalExpenses === 0) totalExpenses = 13450;
-    if (totalBonuses === 0) totalBonuses = 7500;
-
     const activeInv = this.getInventory(false);
     const assignedInv = activeInv.filter(i => i.status === 'Assigned' || i.status === 'Deployed');
     const availableInv = activeInv.filter(i => i.status === 'Available' || i.status === 'In-Stock');
     const repairInv = activeInv.filter(i => i.status === 'Under Repair' || i.status === 'In-Repair' || i.condition === 'Damaged' || i.condition === 'For Repair');
     const missingInv = activeInv.filter(i => i.status === 'Missing' || i.condition === 'Lost');
-    const activeStaff = (this.data.employees || []).filter(e => e.status === 'Active').length;
+    const activeStaff = (this.data.employees || []).filter(e => (e.status || 'ACTIVE').toUpperCase() === 'ACTIVE').length;
     const activeBooths = (this.data.booths || []).length;
 
     return {

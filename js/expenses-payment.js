@@ -7,8 +7,10 @@ class ExpensesPaymentController {
   constructor() {
     this.activeTab = 'expenses';
     this.searchQuery = '';
-    this.selectedTeller = 'JUVYLYN H. TURA';
-    this.selectedCollector = 'MARK ANTHONY (MAC2)';
+    this.selectedTeller = '';
+    this.selectedTellerId = '';
+    this.selectedCollector = '';
+    this.selectedCollectorId = '';
     this.currentCalendarYear = 2026;
     this.currentCalendarMonth = 8;
     this.pendingOcrResult = null;
@@ -39,6 +41,17 @@ class ExpensesPaymentController {
     this.ensureSeedData();
     if (!this.initialized) {
       this.attachEventListeners();
+      if (window.appStore && typeof window.appStore.subscribe === 'function') {
+        window.appStore.subscribe(() => {
+          if (this.initialized) {
+            if (this.activeTab === 'short-tracker') {
+              this.setupSearchableTellerSelect();
+            } else if (this.activeTab === 'ca-tracker') {
+              this.setupSearchableCollectorSelect();
+            }
+          }
+        });
+      }
       this.initialized = true;
     }
     this.render();
@@ -51,8 +64,14 @@ class ExpensesPaymentController {
     const store = window.appStore;
     if (!store) return;
     if (!store.data.transactions) store.data.transactions = [];
+    if (!store.data.deletedTransactionIds) store.data.deletedTransactionIds = [];
     if (!store.data.uploadedImageHashes) store.data.uploadedImageHashes = [];
     if (!store.data.employees) store.data.employees = [];
+
+    // Purge any lingering deleted transactions
+    if (store.data.deletedTransactionIds.length > 0) {
+      store.data.transactions = store.data.transactions.filter(t => t && !store.data.deletedTransactionIds.includes(t.id));
+    }
 
     // Purge any lingering deletedFromTracker records and deduplicate identical IDs
     const seen = new Set();
@@ -61,7 +80,7 @@ class ExpensesPaymentController {
 
     store.data.transactions.forEach(t => {
       if (!t) return;
-      if (t.deletedFromTracker) {
+      if (t.deletedFromTracker || store.data.deletedTransactionIds.includes(t.id)) {
         modified = true;
         return;
       }
@@ -73,7 +92,6 @@ class ExpensesPaymentController {
         t.id = 'TXN-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
         modified = true;
       }
-      // If an exact duplicate ID exists in legacy storage, assign a unique ID so it is an independent record
       if (seen.has(t.id)) {
         t.id = t.id + '-DUP-' + Math.random().toString(36).substr(2, 6);
         modified = true;
@@ -100,35 +118,13 @@ class ExpensesPaymentController {
       });
     }
 
-    // Do NOT wipe or overwrite user transactions if store already has records
-    if (store.data.epSeedInitialized || store.data.transactions.length > 0) {
-      store.data.epSeedInitialized = true;
-      return;
+    // User Request: Delete/Reset to 0 the stored data for Expenses & Payment Management
+    // Purge any legacy sample demo transactions (TXN-TURA, TXN-MAC, TXN-EXP, TXN-2024)
+    if (store.data.transactions && Array.isArray(store.data.transactions)) {
+      const isLegacyDemo = (id) => typeof id === 'string' && (id.startsWith('TXN-TURA-') || id.startsWith('TXN-MAC-') || id.startsWith('TXN-EXP-') || id.startsWith('TXN-2024-') || id.startsWith('TXN-SAMPLE-'));
+      store.data.transactions = store.data.transactions.filter(t => t && !isLegacyDemo(t.id));
     }
 
-    // Only seed initial records if database is completely empty
-    store.data.transactions.push(
-      { id: 'TXN-TURA-01', date: '2026-09-22', amount: 1140.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 22)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-TURA-02', date: '2026-09-23', amount: 325.00, description: 'SHORT TELLER', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'TERMINATED / Station cash shortage (Sept. 23)', classification: 'SHORT', type: 'SHORT', transactionType: 'SHORT_TELLER', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-TURA-PAY01', date: '2026-09-24', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-TURA-PAY02', date: '2026-09-25', amount: 300.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-TURA-PAY03', date: '2026-09-27', amount: 540.00, description: 'PAYMENT', name: 'JUVYLYN H. TURA', employeeId: 'DDN005-TEL-TURA', role: 'Teller', boothCode: 'DDN-1140', location: 'Tagum City', note: 'Final settlement payment against Shortage', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Short Teller', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-MAC-CA01', date: '2026-09-20', amount: 5000.00, description: 'CASH ADVANCE', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Collector Field Operations CA', classification: 'CA', type: 'CASH ADVANCE', transactionType: 'CASH_ADVANCE', applyToCA: false, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-MAC-PAY01', date: '2026-09-24', amount: 500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-MAC-PAY02', date: '2026-09-25', amount: 1000.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-MAC-PAY03', date: '2026-09-28', amount: 3500.00, description: 'PAYMENT', name: 'MARK ANTHONY (MAC2)', employeeId: 'DDN005-SC004', role: 'Collector', boothCode: '', location: 'Panabo City', note: 'Settlement payment against Cash Advance', classification: 'PAYMENT', type: 'PAYMENT', transactionType: 'PAYMENT', appliedTo: 'Cash Advance', applyToCA: true, verificationStatus: 'VERIFIED', status: 'Verified' },
-      { id: 'TXN-EXP-01', date: '2026-09-24', amount: 1200.00, description: 'Fuel Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Field gas allowance', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-02', date: '2026-09-24', amount: 400.00, description: 'Rent Motor', name: 'JOHN', role: 'Collector', boothCode: '', location: 'Field Route', note: 'Motorcycle rental', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-03', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum', note: 'Tagum station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-04', date: '2026-09-24', amount: 30.00, description: 'WiFi Allowance', name: 'Maryjane Fernandez', role: 'Teller', boothCode: 'DDN-1782', location: 'Carmen', note: 'Carmen station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-05', date: '2026-09-24', amount: 50.00, description: 'WiFi Allowance', name: 'Luzviminda Galasatan', role: 'Teller', boothCode: 'DDN-1475', location: 'Panabo', note: 'Panabo station connectivity', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-06', date: '2026-09-24', amount: 20.00, description: 'WiFi Allowance', name: 'Almera Digamon', role: 'Teller', boothCode: 'DDN-768', location: 'Panabo', note: 'Panabo Cagangohan station', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-07', date: '2026-09-24', amount: 10.00, description: 'WiFi Allowance (Hinay Signal)', name: 'Daisy Mae Senadero', role: 'Teller', boothCode: 'DDN-1739', location: 'Sto. Tomas', note: 'Hinay Signal', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-08', date: '2026-09-24', amount: 700.00, description: 'Labor and Deploy Booth', name: 'Logistics Team', role: 'General', boothCode: '', location: 'Panabo Area', note: 'Panabo Area deployment', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-09', date: '2026-09-24', amount: 1000.00, description: 'Meals and Snacks Survey Taza Northman', name: 'Survey Team', role: 'General', boothCode: '', location: 'Davao Del Norte', note: 'Survey Taza Northman', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-12', date: '2026-09-24', amount: 1520.00, description: 'Rent Fee P-6 Liboganon Tagum', name: 'Melanie Sarawi', role: 'Teller', boothCode: 'DDN-1477', location: 'Tagum Liboganon', note: 'Sep. 30 - Oct. 30, To Rulan A.R.', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' },
-      { id: 'TXN-EXP-13', date: '2026-09-24', amount: 330.00, description: 'POS Load 1 Month DDN-1716', name: 'Princess Solamillo', role: 'Teller', boothCode: 'DDN-1716', location: 'Tagum / Sto. Tomas', note: 'Data plan load', classification: 'OTHER', type: 'EXPENSE', isExpense: true, status: 'Verified' }
-    );
     store.data.epSeedInitialized = true;
     store.save();
   }
@@ -220,12 +216,22 @@ class ExpensesPaymentController {
     });
   }
 
-  triggerUpload() {
+  triggerImageUpload() {
+    if (window.authManager && window.authManager.isCollector()) {
+      alert('Permission Denied: Collector accounts cannot upload receipt documents.');
+      return;
+    }
     const fileInput = document.getElementById('ep-image-upload-input');
     if (fileInput) fileInput.click();
   }
 
   switchTab(tabName) {
+    if (window.authManager && window.authManager.isCollector()) {
+      if (tabName !== 'ca-tracker') {
+        alert('Permission Denied: Collector accounts can only access the Cash Advance Tracker in view-only mode.');
+        return;
+      }
+    }
     if (window.sfx) window.sfx.playClick();
     this.activeTab = tabName;
     document.querySelectorAll('.ep-tab-btn').forEach(b => {
@@ -487,6 +493,10 @@ class ExpensesPaymentController {
   // CONFIRM & SAVE (OCR)
   // =========================================================================
   confirmAndSave() {
+    if (window.authManager && window.authManager.isCollector()) {
+      alert('Permission Denied: Collector accounts cannot save or modify financial entries.');
+      return;
+    }
     if (!this.pendingOcrResult || !this.pendingOcrResult.items) return;
     const invalid = this.pendingOcrResult.items.filter(i => i.type === 'CASH ADVANCE' && (i.role || '').toUpperCase().includes('TELLER'));
     if (invalid.length > 0) {
@@ -549,22 +559,31 @@ class ExpensesPaymentController {
   }
 
   deleteTransaction(txnId) {
+    if (window.authManager && window.authManager.isCollector()) {
+      alert('Permission Denied: Collector accounts cannot delete records.');
+      return;
+    }
+    const store = window.appStore;
+    const txn = store ? (store.data.transactions || []).find(t => t.id === txnId) : null;
+    const typeLabel = txn ? (txn.classification || txn.type || 'record') : 'record';
+    const amountStr = txn ? `₱${Number(txn.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '';
+    const nameStr = txn ? (txn.name || txn.description || '') : '';
+    const detailStr = (amountStr || nameStr) ? ` (${[amountStr, nameStr].filter(Boolean).join(' • ')})` : '';
+
     this.showConfirmModal({
-      title: 'Delete Record?',
-      message: 'Are you sure you want to permanently delete this record? This action cannot be undone.',
+      title: 'Permanently Delete Record?',
+      message: `Are you sure you want to permanently delete this ${typeLabel}${detailStr}? This action cannot be undone and will permanently remove the record from all ledgers and financial histories.`,
       yesText: 'YES, DELETE',
       noText: 'NO, KEEP RECORD',
       isDanger: true,
       onConfirm: () => {
-        const store = window.appStore;
-        if (!store || !store.data || !Array.isArray(store.data.transactions)) return;
-        const idx = store.data.transactions.findIndex(t => t.id === txnId);
-        if (idx !== -1) {
-          store.data.transactions.splice(idx, 1);
-          store.save();
-        }
+        if (!store) return;
+        store.deleteTransaction(txnId);
         if (window.sfx) window.sfx.playChime();
         this.render();
+      },
+      onCancel: () => {
+        // User clicked NO: cancellation, keep record
       }
     });
   }
@@ -637,6 +656,43 @@ class ExpensesPaymentController {
   // RENDERING
   // =========================================================================
   render() {
+    const isCollector = window.authManager && window.authManager.isCollector();
+    if (isCollector) {
+      this.activeTab = 'ca-tracker';
+      // Hide non-CA tabs and upload buttons
+      document.querySelectorAll('.ep-tab-btn').forEach(b => {
+        const tab = b.getAttribute('data-tab');
+        if (tab !== 'ca-tracker') {
+          b.style.display = 'none';
+        } else {
+          b.style.display = 'inline-flex';
+          b.classList.add('active');
+        }
+      });
+      document.querySelectorAll('.ep-tab-content').forEach(c => {
+        c.classList.toggle('active', c.id === 'ep-tab-ca-tracker');
+      });
+
+      // Hide top action buttons
+      const uploadBtn = document.getElementById('ep-btn-upload-receipt');
+      if (uploadBtn) uploadBtn.style.display = 'none';
+      const sampleBtn = document.getElementById('ep-btn-load-sample');
+      if (sampleBtn) sampleBtn.style.display = 'none';
+      const ocrReviewBtn = document.getElementById('ep-btn-review-ocr');
+      if (ocrReviewBtn) ocrReviewBtn.style.display = 'none';
+
+      // Hide payment record trigger buttons if any
+      document.querySelectorAll('.ep-record-payment-trigger').forEach(el => el.style.display = 'none');
+    } else {
+      document.querySelectorAll('.ep-tab-btn').forEach(b => {
+        b.style.display = 'inline-flex';
+      });
+      const uploadBtn = document.getElementById('ep-btn-upload-receipt');
+      if (uploadBtn) uploadBtn.style.display = 'inline-flex';
+      const sampleBtn = document.getElementById('ep-btn-load-sample');
+      if (sampleBtn) sampleBtn.style.display = 'inline-flex';
+    }
+
     this.updateKpiCounters();
     this.renderCurrentTab();
   }
@@ -730,14 +786,18 @@ class ExpensesPaymentController {
     this.populateTellerSelect();
 
     const name = this.selectedTeller;
+    const selId = (this.selectedTellerId || '').toUpperCase();
     const txns = store.data.transactions || [];
-    const qU = name.toUpperCase();
+    const qU = (name || '').toUpperCase();
 
     const ttxns = txns.filter(t => {
-      if (!t.name) return false;
+      if (!t || !t.name) return false;
       const tU = t.name.toUpperCase();
-      const match = tU.includes(qU) || qU.includes(tU);
-      if (!match) return false;
+      const tId = (t.employeeId || '').toUpperCase();
+      const idMatch = selId && tId && (selId === tId);
+      const nameMatch = qU && (tU.includes(qU) || qU.includes(tU));
+      if (!idMatch && !nameMatch) return false;
+
       const isShort = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
       const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && !t.applyToCA;
       return isShort || isPy;
@@ -864,13 +924,18 @@ class ExpensesPaymentController {
     this.populateCollectorSelect();
 
     const name = this.selectedCollector;
+    const selId = (this.selectedCollectorId || '').toLowerCase();
     const txns = store.data.transactions || [];
-    const qN = name.toLowerCase();
+    const qN = (name || '').toLowerCase();
 
     const ctxns = txns.filter(t => {
-      if (!t.name) return false;
-      const match = t.name.toLowerCase().includes(qN) || qN.includes(t.name.toLowerCase());
-      if (!match) return false;
+      if (!t || !t.name) return false;
+      const tN = t.name.toLowerCase();
+      const tId = (t.employeeId || '').toLowerCase();
+      const idMatch = selId && tId && (selId === tId);
+      const nameMatch = qN && (tN.includes(qN) || qN.includes(tN));
+      if (!idMatch && !nameMatch) return false;
+
       const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
       const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && t.applyToCA;
       return isCA || isPy;
@@ -929,7 +994,8 @@ class ExpensesPaymentController {
       if (activeOrigCA === 0) {
         sb.className = 'badge badge-secondary';
         sb.textContent = 'NO CASH ADVANCE';
-        sb.removeAttribute('style');
+        if (typeof sb.removeAttribute === 'function') sb.removeAttribute('style');
+        else sb.style.cssText = '';
       } else if (activeFull) {
         sb.className = 'badge badge-success';
         sb.style.cssText = 'background:#10b981;color:#fff;';
@@ -961,9 +1027,11 @@ class ExpensesPaymentController {
           if (row.settlement === 'Fully Paid') badgeColor = '#10b981';
           else if (row.settlement === 'Pending') badgeColor = '#ef4444';
 
-          const actionHtml =
-            '<button type="button" class="btn btn-secondary btn-xs ep-btn-edit" data-ep-action="edit" data-id="' + row.id + '" data-section="ca" onclick="window.expensesPayment.openEditModal(\'' + row.id + '\', \'ca\')" style="color:var(--accent-gold);border-color:var(--accent-gold);font-size:11px;padding:3px 8px;margin-right:4px;cursor:pointer;">Edit</button>' +
-            '<button type="button" class="btn btn-secondary btn-xs ep-btn-delete" data-ep-action="delete" data-id="' + row.id + '" data-section="ca" onclick="window.expensesPayment.onDeleteCAClicked(\'' + row.id + '\')" style="color:#ef4444;border-color:rgba(239,68,68,0.4);font-size:11px;padding:3px 8px;cursor:pointer;">Delete</button>';
+          const isCollector = window.authManager && window.authManager.isCollector();
+          const actionHtml = isCollector
+            ? '<span style="font-size:11px;color:var(--text-muted);font-style:italic;">View-only</span>'
+            : ('<button type="button" class="btn btn-secondary btn-xs ep-btn-edit" data-ep-action="edit" data-id="' + row.id + '" data-section="ca" onclick="window.expensesPayment.openEditModal(\'' + row.id + '\', \'ca\')" style="color:var(--accent-gold);border-color:var(--accent-gold);font-size:11px;padding:3px 8px;margin-right:4px;cursor:pointer;">Edit</button>' +
+               '<button type="button" class="btn btn-secondary btn-xs ep-btn-delete" data-ep-action="delete" data-id="' + row.id + '" data-section="ca" onclick="window.expensesPayment.onDeleteCAClicked(\'' + row.id + '\')" style="color:#ef4444;border-color:rgba(239,68,68,0.4);font-size:11px;padding:3px 8px;cursor:pointer;">Delete</button>');
 
           return '<tr style="' + (row.remaining === 0 && !row.isCA ? 'background:rgba(16,185,129,0.06);' : '') + '">' +
             '<td style="font-weight:700;">' + this.escapeHtml(row.date) + '</td>' +
@@ -1202,102 +1270,362 @@ class ExpensesPaymentController {
     this.renderCurrentTab();
   }
 
-  populateTellerSelect() {
-    const sel = document.getElementById('ep-teller-selector');
-    if (!sel) return;
+  // =========================================================================
+  // MASTER REGISTRY SYNCHRONIZATION & SEARCHABLE DROPDOWNS
+  // =========================================================================
+
+  getEligibleTellers() {
     const store = window.appStore;
-    const set = new Set();
+    if (!store || !store.data) return [];
+    const eligible = [];
+    const seen = new Set();
 
-    // 1. All registered tellers from store.data.employees
-    if (store && store.data && Array.isArray(store.data.employees)) {
-      store.data.employees.forEach(e => {
-        const role = (e.role || '').toUpperCase();
-        if (role.includes('TELLER') && e.name) {
-          set.add(e.name.trim());
+    const emps = Array.isArray(store.data.employees) ? store.data.employees : [];
+    const rels = Array.isArray(store.data.relievers) ? store.data.relievers : [];
+    const all = [...emps, ...rels];
+
+    all.forEach(e => {
+      if (!e || !e.name) return;
+      const name = e.name.trim();
+      if (!name || name === 'N/A' || name === '-') return;
+
+      const status = (e.status || 'ACTIVE').toUpperCase();
+      if (status !== 'ACTIVE') return; // Master Registry Active filter
+
+      const role = (e.role || '').toUpperCase();
+      const isReliever = role.includes('RELIEVER') || role.includes('RELIVER');
+      const isTeller = role.includes('TELLER') || role.includes('SALES REPRESENTATIVE');
+      const isCollector = role.includes('COLLECTOR');
+      const isSupervisor = role.includes('SUPERVISOR');
+      const isTeamLeader = role.includes('TEAM LEADER');
+
+      // Requirement: Only Station Teller and Reliever roles are eligible
+      if ((isTeller || isReliever) && !isCollector && !isSupervisor && !isTeamLeader) {
+        const key = (e.id || name).trim().toUpperCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          eligible.push({
+            id: e.id || '',
+            name: name,
+            role: isReliever ? 'Reliever' : 'Station Teller',
+            boothCode: e.boothCode || e.booth || '',
+            area: e.area || e.municipality || 'Davao Sector',
+            status: e.status || 'Active'
+          });
         }
-      });
-    }
-
-    // 2. Default tracked teller
-    set.add('JUVYLYN H. TURA');
-
-    // 3. Any additional tellers from transactions
-    const txns = store ? (store.data.transactions || []) : [];
-    txns.forEach(t => {
-      const isShort = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
-      const isShortPay = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && !t.applyToCA;
-      if (t.name && (isShort || isShortPay)) {
-        set.add(t.name.trim());
       }
     });
 
-    const list = Array.from(set.values()).sort();
-    if (!list.includes(this.selectedTeller)) {
-      this.selectedTeller = list[0] || 'JUVYLYN H. TURA';
+    eligible.sort((a, b) => a.name.localeCompare(b.name));
+    return eligible;
+  }
+
+  getEligibleCollectors() {
+    const store = window.appStore;
+    if (!store || !store.data) return [];
+    const eligible = [];
+    const seen = new Set();
+
+    const emps = Array.isArray(store.data.employees) ? store.data.employees : [];
+    emps.forEach(e => {
+      if (!e || !e.name) return;
+      const name = e.name.trim();
+      if (!name || name === 'N/A' || name === '-') return;
+
+      const status = (e.status || 'ACTIVE').toUpperCase();
+      if (status !== 'ACTIVE') return; // Master Registry Active filter
+
+      const role = (e.role || '').toUpperCase();
+      const isCollector = role.includes('COLLECTOR');
+      const isTeller = role.includes('TELLER') || role.includes('SALES REPRESENTATIVE');
+      const isSupervisor = role.includes('SUPERVISOR');
+
+      // Requirement: Only Collector role is eligible
+      if (isCollector && !isTeller && !isSupervisor) {
+        const key = (e.id || name).trim().toUpperCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          eligible.push({
+            id: e.id || '',
+            name: name,
+            role: 'Collector',
+            boothCode: '',
+            area: e.area || e.municipality || 'Field Route',
+            status: e.status || 'Active'
+          });
+        }
+      }
+    });
+
+    eligible.sort((a, b) => a.name.localeCompare(b.name));
+    return eligible;
+  }
+
+  populateTellerSelect() {
+    this.setupSearchableTellerSelect();
+  }
+
+  setupSearchableTellerSelect() {
+    const container = document.getElementById('ep-teller-selector-container');
+    if (!container) return;
+
+    const eligibleList = this.getEligibleTellers();
+
+    // Default selection if unset
+    if (!this.selectedTeller && eligibleList.length > 0) {
+      this.selectedTeller = eligibleList[0].name;
+      this.selectedTellerId = eligibleList[0].id;
     }
 
-    sel.innerHTML = list.map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedTeller.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
-    sel.onchange = e => {
-      this.selectedTeller = e.target.value;
-      this.shortLedgerPage = 1;
-      this.renderShortTrackerTab();
+    const currentPerson = eligibleList.find(e => 
+      (this.selectedTellerId && e.id === this.selectedTellerId) ||
+      (this.selectedTeller && e.name.toUpperCase() === this.selectedTeller.toUpperCase())
+    );
+
+    const displayName = currentPerson ? currentPerson.name : (this.selectedTeller || 'Select Teller');
+    const badgeText = currentPerson ? (currentPerson.boothCode ? `Booth: ${currentPerson.boothCode}` : currentPerson.role) : 'Historical Record';
+    const badgeBg = currentPerson ? (currentPerson.role === 'Reliever' ? 'rgba(139,92,246,0.15)' : 'rgba(251,191,36,0.15)') : 'rgba(148,163,184,0.15)';
+    const badgeColor = currentPerson ? (currentPerson.role === 'Reliever' ? '#a78bfa' : 'var(--accent-gold)') : 'var(--text-muted)';
+
+    container.innerHTML = `
+      <div class="ep-searchable-select" id="ep-teller-searchable-wrapper">
+        <div class="ep-searchable-trigger" id="ep-teller-searchable-trigger" tabindex="0">
+          <div class="ep-searchable-label">
+            <span>${this.escapeHtml(displayName)}</span>
+            <span class="badge" style="font-size:11px; margin-left:6px; background:${badgeBg}; color:${badgeColor}; font-weight:700;">${this.escapeHtml(badgeText)}</span>
+          </div>
+          <span class="ep-searchable-arrow">▼</span>
+        </div>
+        <div class="ep-searchable-dropdown" id="ep-teller-searchable-dropdown">
+          <div class="ep-searchable-search-box">
+            <span style="font-size:13px; color:var(--text-muted);">🔍</span>
+            <input type="text" class="ep-searchable-input" id="ep-teller-search-input" placeholder="Search teller by name, ID, or booth..." autocomplete="off">
+          </div>
+          <div class="ep-searchable-list" id="ep-teller-searchable-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <select id="ep-teller-selector" style="display:none;">
+          ${eligibleList.map(e => `<option value="${this.escapeHtml(e.name)}" ${e.name.toUpperCase() === (this.selectedTeller || '').toUpperCase() ? 'selected' : ''}>${this.escapeHtml(e.name)}</option>`).join('')}
+        </select>
+      </div>
+    `;
+
+    const wrapper = document.getElementById('ep-teller-searchable-wrapper');
+    const trigger = document.getElementById('ep-teller-searchable-trigger');
+    const dropdown = document.getElementById('ep-teller-searchable-dropdown');
+    const searchInput = document.getElementById('ep-teller-search-input');
+    const listEl = document.getElementById('ep-teller-searchable-list');
+
+    const renderList = (filterText = '') => {
+      const q = filterText.toLowerCase().trim();
+      const filtered = eligibleList.filter(e => 
+        !q ||
+        e.name.toLowerCase().includes(q) ||
+        (e.id && e.id.toLowerCase().includes(q)) ||
+        (e.boothCode && e.boothCode.toLowerCase().includes(q)) ||
+        (e.role && e.role.toLowerCase().includes(q))
+      );
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="ep-searchable-empty">No active tellers matching "${this.escapeHtml(filterText)}"</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(e => {
+        const isSelected = (this.selectedTeller && e.name.toUpperCase() === this.selectedTeller.toUpperCase()) ||
+                           (this.selectedTellerId && e.id === this.selectedTellerId);
+        return `
+          <div class="ep-searchable-item ${isSelected ? 'selected' : ''}" data-id="${this.escapeHtml(e.id)}" data-name="${this.escapeHtml(e.name)}">
+            <div>
+              <div style="font-weight:700; color:var(--text-main); font-size:13px;">${this.escapeHtml(e.name)}</div>
+              <div style="font-size:11px; color:var(--text-muted); display:flex; gap:6px; align-items:center; margin-top:2px;">
+                <span class="badge" style="font-size:10px; padding:1px 5px; background:${e.role === 'Reliever' ? 'rgba(139,92,246,0.15);color:#a78bfa;' : 'rgba(251,191,36,0.15);color:var(--accent-gold);'}">${this.escapeHtml(e.role)}</span>
+                ${e.boothCode ? `<span>Booth: <strong>${this.escapeHtml(e.boothCode)}</strong></span>` : ''}
+                ${e.id ? `<span>(${this.escapeHtml(e.id)})</span>` : ''}
+              </div>
+            </div>
+            ${isSelected ? '<span style="color:var(--accent-gold); font-weight:800; font-size:14px;">✓</span>' : ''}
+          </div>
+        `;
+      }).join('');
+
+      listEl.querySelectorAll('.ep-searchable-item').forEach(item => {
+        item.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const chosenName = item.getAttribute('data-name');
+          const chosenId = item.getAttribute('data-id');
+          this.selectedTeller = chosenName;
+          this.selectedTellerId = chosenId;
+          this.shortLedgerPage = 1;
+          wrapper.classList.remove('open');
+          this.renderShortTrackerTab();
+        });
+      });
     };
+
+    trigger.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const isOpen = wrapper.classList.contains('open');
+      document.querySelectorAll('.ep-searchable-select.open').forEach(el => el.classList.remove('open'));
+      if (!isOpen) {
+        wrapper.classList.add('open');
+        renderList('');
+        searchInput.value = '';
+        setTimeout(() => searchInput.focus(), 60);
+      }
+    });
+
+    searchInput.addEventListener('input', (ev) => {
+      renderList(ev.target.value);
+    });
+
+    searchInput.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+    });
+
+    document.addEventListener('click', (ev) => {
+      if (!wrapper.contains(ev.target)) {
+        wrapper.classList.remove('open');
+      }
+    });
   }
 
   populateCollectorSelect() {
-    const sel = document.getElementById('ep-collector-selector');
-    if (!sel) return;
-    const store = window.appStore;
-    const set = new Set();
+    this.setupSearchableCollectorSelect();
+  }
 
-    // 1. All registered collectors from store.data.employees
-    if (store && store.data && Array.isArray(store.data.employees)) {
-      store.data.employees.forEach(e => {
-        const role = (e.role || '').toUpperCase();
-        if (role.includes('COLLECTOR') && e.name) {
-          set.add(e.name.trim());
-        }
-      });
+  setupSearchableCollectorSelect() {
+    const container = document.getElementById('ep-collector-selector-container');
+    if (!container) return;
+
+    const eligibleList = this.getEligibleCollectors();
+
+    // Default selection if unset
+    if (!this.selectedCollector && eligibleList.length > 0) {
+      this.selectedCollector = eligibleList[0].name;
+      this.selectedCollectorId = eligibleList[0].id;
     }
 
-    // 2. Official roster of Sector Collectors (never disappear even if 0 transactions)
-    const officialCollectors = [
-      'MARK ANTHONY (MAC2)',
-      'JOHN',
-      'MUHLEN',
-      'JASON',
-      'Jayson Pacaña'
-    ];
-    officialCollectors.forEach(c => set.add(c));
+    const currentPerson = eligibleList.find(e => 
+      (this.selectedCollectorId && e.id === this.selectedCollectorId) ||
+      (this.selectedCollector && e.name.toLowerCase() === this.selectedCollector.toLowerCase())
+    );
 
-    // 3. Any additional collectors from transactions
-    const txns = store ? (store.data.transactions || []) : [];
-    txns.forEach(t => {
-      const isCA = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
-      const isCAPay = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && t.applyToCA;
-      const isColRole = (t.role || '').toUpperCase().includes('COLLECTOR');
-      if (t.name && (isCA || isCAPay || isColRole)) {
-        set.add(t.name.trim());
+    const displayName = currentPerson ? currentPerson.name : (this.selectedCollector || 'Select Collector');
+    const badgeText = currentPerson ? 'Collector' : 'Historical Record';
+
+    container.innerHTML = `
+      <div class="ep-searchable-select" id="ep-collector-searchable-wrapper">
+        <div class="ep-searchable-trigger" id="ep-collector-searchable-trigger" tabindex="0">
+          <div class="ep-searchable-label">
+            <span>${this.escapeHtml(displayName)}</span>
+            <span class="badge" style="font-size:11px; margin-left:6px; background:rgba(139,92,246,0.15); color:#a78bfa; font-weight:700;">${this.escapeHtml(badgeText)}</span>
+          </div>
+          <span class="ep-searchable-arrow">▼</span>
+        </div>
+        <div class="ep-searchable-dropdown" id="ep-collector-searchable-dropdown">
+          <div class="ep-searchable-search-box">
+            <span style="font-size:13px; color:var(--text-muted);">🔍</span>
+            <input type="text" class="ep-searchable-input" id="ep-collector-search-input" placeholder="Search collector by name, ID, or route..." autocomplete="off">
+          </div>
+          <div class="ep-searchable-list" id="ep-collector-searchable-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <select id="ep-collector-selector" style="display:none;">
+          ${eligibleList.map(e => `<option value="${this.escapeHtml(e.name)}" ${e.name.toLowerCase() === (this.selectedCollector || '').toLowerCase() ? 'selected' : ''}>${this.escapeHtml(e.name)}</option>`).join('')}
+        </select>
+      </div>
+    `;
+
+    const wrapper = document.getElementById('ep-collector-searchable-wrapper');
+    const trigger = document.getElementById('ep-collector-searchable-trigger');
+    const dropdown = document.getElementById('ep-collector-searchable-dropdown');
+    const searchInput = document.getElementById('ep-collector-search-input');
+    const listEl = document.getElementById('ep-collector-searchable-list');
+
+    const renderList = (filterText = '') => {
+      const q = filterText.toLowerCase().trim();
+      const filtered = eligibleList.filter(e => 
+        !q ||
+        e.name.toLowerCase().includes(q) ||
+        (e.id && e.id.toLowerCase().includes(q)) ||
+        (e.area && e.area.toLowerCase().includes(q))
+      );
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="ep-searchable-empty">No active collectors matching "${this.escapeHtml(filterText)}"</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(e => {
+        const isSelected = (this.selectedCollector && e.name.toLowerCase() === this.selectedCollector.toLowerCase()) ||
+                           (this.selectedCollectorId && e.id === this.selectedCollectorId);
+        return `
+          <div class="ep-searchable-item ${isSelected ? 'selected' : ''}" data-id="${this.escapeHtml(e.id)}" data-name="${this.escapeHtml(e.name)}">
+            <div>
+              <div style="font-weight:700; color:var(--text-main); font-size:13px;">${this.escapeHtml(e.name)}</div>
+              <div style="font-size:11px; color:var(--text-muted); display:flex; gap:6px; align-items:center; margin-top:2px;">
+                <span class="badge" style="font-size:10px; padding:1px 5px; background:rgba(139,92,246,0.15); color:#a78bfa;">Collector</span>
+                ${e.area ? `<span>Route: <strong>${this.escapeHtml(e.area)}</strong></span>` : ''}
+                ${e.id ? `<span>(${this.escapeHtml(e.id)})</span>` : ''}
+              </div>
+            </div>
+            ${isSelected ? '<span style="color:var(--accent-gold); font-weight:800; font-size:14px;">✓</span>' : ''}
+          </div>
+        `;
+      }).join('');
+
+      listEl.querySelectorAll('.ep-searchable-item').forEach(item => {
+        item.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const chosenName = item.getAttribute('data-name');
+          const chosenId = item.getAttribute('data-id');
+          this.selectedCollector = chosenName;
+          this.selectedCollectorId = chosenId;
+          this.caLedgerPage = 1;
+          wrapper.classList.remove('open');
+          this.renderCashAdvanceTrackerTab();
+        });
+      });
+    };
+
+    trigger.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const isOpen = wrapper.classList.contains('open');
+      document.querySelectorAll('.ep-searchable-select.open').forEach(el => el.classList.remove('open'));
+      if (!isOpen) {
+        wrapper.classList.add('open');
+        renderList('');
+        searchInput.value = '';
+        setTimeout(() => searchInput.focus(), 60);
       }
     });
 
-    const list = Array.from(set.values()).sort();
-    if (!list.includes(this.selectedCollector)) {
-      this.selectedCollector = list[0] || 'MARK ANTHONY (MAC2)';
-    }
+    searchInput.addEventListener('input', (ev) => {
+      renderList(ev.target.value);
+    });
 
-    sel.innerHTML = list.map(nm => '<option value="' + this.escapeHtml(nm) + '"' + (nm.toUpperCase() === this.selectedCollector.toUpperCase() ? ' selected' : '') + '>' + this.escapeHtml(nm) + '</option>').join('');
-    sel.onchange = e => {
-      this.selectedCollector = e.target.value;
-      this.caLedgerPage = 1;
-      this.renderCashAdvanceTrackerTab();
-    };
+    searchInput.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+    });
+
+    document.addEventListener('click', (ev) => {
+      if (!wrapper.contains(ev.target)) {
+        wrapper.classList.remove('open');
+      }
+    });
   }
 
   // =========================================================================
-  // MANUAL PAYMENT MODAL
+  // MANUAL PAYMENT MODAL & BALANCES
   // =========================================================================
   openPaymentModal(targetPerson, targetRole) {
+    if (window.authManager && window.authManager.isCollector()) {
+      alert('Permission Denied: Collector accounts cannot record payments.');
+      return;
+    }
     const person = targetPerson || (this.activeTab === 'short-tracker' ? this.selectedTeller : this.selectedCollector);
     const role = targetRole || (this.activeTab === 'short-tracker' ? 'Teller' : 'Collector');
     const modal = document.getElementById('modal-ep-record-payment');
@@ -1322,6 +1650,10 @@ class ExpensesPaymentController {
   }
 
   submitManualPayment() {
+    if (window.authManager && window.authManager.isCollector()) {
+      alert('Permission Denied: Collector accounts cannot record payments.');
+      return;
+    }
     const person = (document.getElementById('ep-paymodal-person') ? document.getElementById('ep-paymodal-person').value : '').trim();
     const role = document.getElementById('ep-paymodal-role') ? document.getElementById('ep-paymodal-role').value : 'Teller';
     const date = document.getElementById('ep-paymodal-date') ? document.getElementById('ep-paymodal-date').value : new Date().toISOString().split('T')[0];
@@ -1331,31 +1663,93 @@ class ExpensesPaymentController {
       alert('Please provide a valid person name and payment amount greater than zero.');
       return;
     }
-    const isCA = role === 'Collector';
+    const isCA = role === 'Collector' || (role && role.toUpperCase().includes('COLLECTOR'));
     const store = window.appStore;
     if (!store) return;
-    store.data.transactions.push({
-      id: 'TXN-PAY-' + Date.now(),
+
+    // Master Registry Person lookup for stable relationship
+    const allEmps = [...(store.data.employees || []), ...(store.data.relievers || [])];
+    const matchedEmp = allEmps.find(e => e && e.name && e.name.trim().toUpperCase() === person.toUpperCase()) ||
+                      allEmps.find(e => e && e.id && (e.id === this.selectedTellerId || e.id === this.selectedCollectorId));
+
+    const empId = matchedEmp ? matchedEmp.id : (isCA ? (this.selectedCollectorId || '') : (this.selectedTellerId || ''));
+    const finalRole = matchedEmp ? matchedEmp.role : role;
+    const boothCode = matchedEmp ? (matchedEmp.boothCode || matchedEmp.booth || '') : '';
+    const loc = matchedEmp ? (matchedEmp.area || matchedEmp.municipality || '') : '';
+
+    // Calculate outstanding balance to prevent negative balance or overpayment
+    const txns = store.data.transactions || [];
+    let orig = 0, paid = 0;
+    if (!isCA) {
+      const qU = person.toUpperCase();
+      txns.forEach(t => {
+        if (!t || !t.name) return;
+        const tU = t.name.toUpperCase();
+        const idMatch = empId && t.employeeId && (t.employeeId === empId);
+        const nameMatch = tU.includes(qU) || qU.includes(tU);
+        if (!idMatch && !nameMatch) return;
+        const isSh = t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'));
+        const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && !t.applyToCA;
+        if (isSh) orig += Number(t.amount) || 0;
+        else if (isPy) paid += Number(t.amount) || 0;
+      });
+      const curRem = Math.max(0, orig - paid);
+      if (curRem === 0 && orig > 0) {
+        alert(`Cannot record payment: ${person}'s shortages are already FULLY PAID (Remaining Balance: ₱0.00).`);
+        return;
+      }
+      if (amt > curRem && curRem > 0) {
+        alert(`Payment amount (₱${amt.toLocaleString('en-US', {minimumFractionDigits: 2})}) exceeds the remaining shortage balance of ₱${curRem.toLocaleString('en-US', {minimumFractionDigits: 2})}. Overpayments are not allowed.`);
+        return;
+      }
+    } else {
+      const qN = person.toLowerCase();
+      txns.forEach(t => {
+        if (!t || !t.name) return;
+        const tN = t.name.toLowerCase();
+        const idMatch = empId && t.employeeId && (t.employeeId === empId);
+        const nameMatch = tN.includes(qN) || qN.includes(tN);
+        if (!idMatch && !nameMatch) return;
+        const isC = t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'));
+        const isPy = (t.classification === 'PAYMENT' || t.type === 'PAYMENT') && t.applyToCA;
+        if (isC) orig += Number(t.amount) || 0;
+        else if (isPy) paid += Number(t.amount) || 0;
+      });
+      const curRem = Math.max(0, orig - paid);
+      if (curRem === 0 && orig > 0) {
+        alert(`Cannot record payment: ${person}'s Cash Advances are already FULLY PAID (Remaining Balance: ₱0.00).`);
+        return;
+      }
+      if (amt > curRem && curRem > 0) {
+        alert(`Payment amount (₱${amt.toLocaleString('en-US', {minimumFractionDigits: 2})}) exceeds the remaining CA balance of ₱${curRem.toLocaleString('en-US', {minimumFractionDigits: 2})}. Overpayments are not allowed.`);
+        return;
+      }
+    }
+
+    const newPayment = {
+      id: 'TXN-PAY-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
       date: date,
       amount: amt,
-      description: 'PAYMENT',
-      name: person,
-      role: role,
-      boothCode: '',
-      location: '',
+      description: isCA ? `PAYMENT - C.A. - ${person}` : `PAYMENT - SHORT - ${person}`,
+      name: matchedEmp ? matchedEmp.name : person,
+      employeeId: empId,
+      role: finalRole,
+      boothCode: boothCode,
+      location: loc,
       classification: 'PAYMENT',
       type: 'PAYMENT',
       transactionType: 'PAYMENT',
       applyToCA: isCA,
       appliedTo: isCA ? 'Cash Advance' : 'Short Teller',
       note: notes || (isCA ? 'CA Payment - ' + person : 'Shortage Payment - ' + person),
+      settlement: 'CREDITED',
       verificationStatus: 'VERIFIED',
       status: 'Verified'
-    });
-    store.save();
+    };
+
+    store.addTransaction(newPayment);
     if (window.sfx) window.sfx.playChime();
     this.closePaymentModal();
-    alert('Payment of P' + amt.toLocaleString('en-US', { minimumFractionDigits: 2 }) + ' recorded for ' + person + '!');
     this.render();
   }
 
@@ -1363,6 +1757,10 @@ class ExpensesPaymentController {
   // UNIFIED EDIT MODAL & REAL-TIME RECALCULATION
   // =========================================================================
   openEditModal(txnId, section) {
+    if (window.authManager && window.authManager.isCollector()) {
+      alert('Permission Denied: Collector accounts cannot edit financial records.');
+      return;
+    }
     const store = window.appStore;
     if (!store) return;
     const txn = store.data.transactions.find(t => t.id === txnId);
@@ -1576,6 +1974,10 @@ class ExpensesPaymentController {
   }
 
   _executeSaveTransaction() {
+    if (window.authManager && window.authManager.isCollector()) {
+      alert('Permission Denied: Collector accounts cannot save or modify financial records.');
+      return;
+    }
     const txnId = this._editingTxnId;
     if (!txnId) return;
 

@@ -15,6 +15,74 @@ if (!fs.existsSync(INDEX_FILE)) {
   fs.writeFileSync(INDEX_FILE, JSON.stringify([], null, 2), 'utf8');
 }
 
+// Ensure persistent data directory and transactions database file exist
+const DATA_DIR = path.join(__dirname, 'data');
+const TXN_FILE = path.join(DATA_DIR, 'transactions.json');
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function readPersistentTransactions() {
+  try {
+    if (fs.existsSync(TXN_FILE)) {
+      return JSON.parse(fs.readFileSync(TXN_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error reading persistent transactions:', e);
+  }
+  return null;
+}
+
+function writePersistentTransactions(payload) {
+  try {
+    fs.writeFileSync(TXN_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error writing persistent transactions:', e);
+  }
+}
+
+const OUTLET_FILE = path.join(DATA_DIR, 'outlet_rentals.json');
+
+function readPersistentOutletRentals() {
+  try {
+    if (fs.existsSync(OUTLET_FILE)) {
+      return JSON.parse(fs.readFileSync(OUTLET_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error reading persistent outlet rentals:', e);
+  }
+  return null;
+}
+
+function writePersistentOutletRentals(payload) {
+  try {
+    fs.writeFileSync(OUTLET_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error writing persistent outlet rentals:', e);
+  }
+}
+
+const THERMAL_FILE = path.join(DATA_DIR, 'thermal_paper.json');
+
+function readPersistentThermalPaper() {
+  try {
+    if (fs.existsSync(THERMAL_FILE)) {
+      return JSON.parse(fs.readFileSync(THERMAL_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error reading persistent thermal paper:', e);
+  }
+  return null;
+}
+
+function writePersistentThermalPaper(payload) {
+  try {
+    fs.writeFileSync(THERMAL_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error writing persistent thermal paper:', e);
+  }
+}
+
 const MIME_TYPES = {
   '.html': 'text/html',
   '.css': 'text/css',
@@ -66,6 +134,171 @@ const server = http.createServer((req, res) => {
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // 0. API ROUTING: /api/transactions (Persistent CRUD)
+    if (pathname === '/api/transactions' && req.method === 'GET') {
+      const data = readPersistentTransactions();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data || { transactions: null, deletedTransactionIds: [] }));
+      return;
+    }
+
+    if (pathname === '/api/transactions' && req.method === 'POST') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        try {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          const payload = JSON.parse(raw);
+          writePersistentTransactions(payload);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, count: payload.transactions ? payload.transactions.length : 0 }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (pathname === '/api/transactions' && req.method === 'DELETE') {
+      const txnId = parsedUrl.searchParams.get('id');
+      if (!txnId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing transaction id' }));
+        return;
+      }
+      try {
+        let data = readPersistentTransactions() || { transactions: [], deletedTransactionIds: [] };
+        data.transactions = (data.transactions || []).filter(t => t.id !== txnId);
+        if (!data.deletedTransactionIds) data.deletedTransactionIds = [];
+        if (!data.deletedTransactionIds.includes(txnId)) {
+          data.deletedTransactionIds.push(txnId);
+        }
+        writePersistentTransactions(data);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, deletedId: txnId }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // 0b. API ROUTING: /api/outlet-rentals (Persistent CRUD for Outlet Rentals & Load Allowance)
+    if (pathname === '/api/outlet-rentals' && req.method === 'GET') {
+      const data = readPersistentOutletRentals();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data || { outletRentals: null, deletedOutletRentalIds: [] }));
+      return;
+    }
+
+    if (pathname === '/api/outlet-rentals' && req.method === 'POST') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        try {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          const payload = JSON.parse(raw);
+          writePersistentOutletRentals(payload);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, count: payload.outletRentals ? payload.outletRentals.length : 0 }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (pathname === '/api/outlet-rentals' && req.method === 'DELETE') {
+      const recordId = parsedUrl.searchParams.get('id');
+      if (!recordId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing outlet rental record id' }));
+        return;
+      }
+      try {
+        let data = readPersistentOutletRentals() || { outletRentals: [], deletedOutletRentalIds: [] };
+        const altId = recordId.startsWith('ORL-') ? recordId.replace(/^ORL-/, '') : ('ORL-' + recordId);
+        data.outletRentals = (data.outletRentals || []).filter(r => r.id !== recordId && r.id !== altId && r.sourceTxnId !== recordId && r.sourceTxnId !== altId);
+        if (!data.deletedOutletRentalIds) data.deletedOutletRentalIds = [];
+        if (!data.deletedOutletRentalIds.includes(recordId)) {
+          data.deletedOutletRentalIds.push(recordId);
+        }
+        if (!data.deletedOutletRentalIds.includes(altId)) {
+          data.deletedOutletRentalIds.push(altId);
+        }
+        writePersistentOutletRentals(data);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, deletedId: recordId }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // 0c. API ROUTING: /api/thermal-paper (Persistent CRUD for Thermal Paper Daily Summary)
+    if (pathname === '/api/thermal-paper' && req.method === 'GET') {
+      const data = readPersistentThermalPaper();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data || { initialStock: 0, dailyStocksOnHand: {}, stockAdjustments: [], allocations: [] }));
+      return;
+    }
+
+    if (pathname === '/api/thermal-paper' && req.method === 'POST') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        try {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          const payload = JSON.parse(raw);
+          writePersistentThermalPaper(payload);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, count: payload.allocations ? payload.allocations.length : 0 }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (pathname === '/api/thermal-paper' && req.method === 'DELETE') {
+      const recordId = parsedUrl.searchParams.get('id');
+      if (!recordId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing thermal paper record id' }));
+        return;
+      }
+      try {
+        let data = readPersistentThermalPaper() || { initialStock: 0, dailyStocksOnHand: {}, stockAdjustments: [], allocations: [] };
+        data.allocations = (data.allocations || []).filter(r => r.id !== recordId);
+        writePersistentThermalPaper(data);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, deletedId: recordId }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // 0d. API ROUTING: /api/reset-operational-data (True Operational Reset)
+    if (pathname === '/api/reset-operational-data' && req.method === 'POST') {
+      try {
+        writePersistentTransactions({ transactions: [], deletedTransactionIds: [] });
+        writePersistentOutletRentals({ outletRentals: [], deletedOutletRentalIds: [] });
+        writePersistentThermalPaper({ initialStock: 0, dailyStocksOnHand: {}, stockAdjustments: [], allocations: [] });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: 'Operational and transactional data truly reset to zero.' }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
       return;
     }
 
@@ -199,6 +432,53 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
         res.end('Error reading report file: ' + err.message);
+        return;
+      }
+    }
+
+    // 3b. GET /api/templates/download?type=ddn|samal - Download permanent ERP master template
+    if (pathname === '/api/templates/download' && req.method === 'GET') {
+      const type = (parsedUrl.searchParams.get('type') || 'ddn').toLowerCase();
+      const tplDir = path.join(__dirname, 'templates');
+      let targetFile = null;
+      let downloadFilename = null;
+
+      if (type === 'samal') {
+        downloadFilename = 'SAMAL - MASTER TEMPLATE.xlsx';
+        const candidate1 = path.join(tplDir, 'SAMAL - MASTER TEMPLATE.xlsx');
+        const candidate2 = path.join(tplDir, 'samal_master.xlsx');
+        if (fs.existsSync(candidate1)) targetFile = candidate1;
+        else if (fs.existsSync(candidate2)) targetFile = candidate2;
+      } else {
+        downloadFilename = 'DDN - MASTER TEMPLATE.xlsx';
+        const candidate1 = path.join(tplDir, 'DDN - MASTER TEMPLATE.xlsx');
+        const candidate2 = path.join(tplDir, 'ddn_master.xlsx');
+        if (fs.existsSync(candidate1)) targetFile = candidate1;
+        else if (fs.existsSync(candidate2)) targetFile = candidate2;
+      }
+
+      if (!targetFile || !fs.existsSync(targetFile)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end(`Master template file not found for ${type.toUpperCase()}.`);
+        return;
+      }
+
+      try {
+        const stat = fs.statSync(targetFile);
+        const fileContent = fs.readFileSync(targetFile);
+        res.writeHead(200, {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${downloadFilename}"`,
+          'Content-Length': stat.size,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        res.end(fileContent);
+        return;
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Error reading master template: ' + err.message);
         return;
       }
     }

@@ -110,7 +110,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initNavigation();
   initModals();
-  initOcrStudio();
+  if (typeof initOcrStudio === 'function') {
+    initOcrStudio();
+  }
   
   // 3. Populate module data
   renderAll();
@@ -122,16 +124,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function renderAll() {
-  renderDashboard();
-  renderEmployeesTable();
-  renderFleetTrackingList();
-  renderPipelines();
-  renderRestDays();
-  renderInventory();
-  renderOrganization();
-  renderEodReport();
-  if (window.expensesPayment) window.expensesPayment.render();
-  updateSidebarBadges();
+  try { if (typeof renderDashboard === 'function') renderDashboard(); } catch (e) { console.error('Dashboard render error:', e); }
+  try { if (typeof renderEmployeesTable === 'function') renderEmployeesTable(); } catch (e) { console.error('Employees render error:', e); }
+  try { if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList(); } catch (e) { console.error('Fleet render error:', e); }
+  try { if (typeof renderPipelines === 'function') renderPipelines(); } catch (e) { console.error('Pipelines render error:', e); }
+  try { if (typeof renderInventory === 'function') renderInventory(); } catch (e) { console.error('Inventory render error:', e); }
+  try { if (window.userManagementModule && typeof window.userManagementModule.render === 'function') window.userManagementModule.render(); } catch (e) { console.error('UserMgmt render error:', e); }
+  try { if (window.workforceAttendanceModule && typeof window.workforceAttendanceModule.render === 'function') window.workforceAttendanceModule.render(); } catch (e) { console.error('Attendance render error:', e); }
+  try { if (window.employeeDocumentsModule && typeof window.employeeDocumentsModule.render === 'function') window.employeeDocumentsModule.render(); } catch (e) { console.error('Docs render error:', e); }
+  try { if (window.expensesPayment && typeof window.expensesPayment.render === 'function') window.expensesPayment.render(); } catch (e) { console.error('Expenses render error:', e); }
+  try { if (window.authManager) window.authManager.updateProfileUi(); } catch (e) {}
+  try { if (typeof updateSidebarBadges === 'function') updateSidebarBadges(); } catch (e) { console.error('Badges render error:', e); }
 }
 
 // 1. Digital Live Clock
@@ -187,13 +190,21 @@ const ROUTE_MAP = {
   '/expenses': 'view-finance',
   '/finance': 'view-finance',
   '/expenses-payment': 'view-finance',
+  '/outlet-rentals': 'view-inventory',
   '/inventory': 'view-inventory',
-  '/reports': 'view-reports',
-  '/eod-reports': 'view-reports',
-  '/rest-days': 'view-restdays',
-  '/organization': 'view-organization',
-  '/teams': 'view-organization',
-  '/ocr': 'view-ocr'
+  '/user-management': 'view-user-management',
+  '/users': 'view-user-management',
+  '/workforce-attendance': 'view-workforce-attendance',
+  '/attendance': 'view-workforce-attendance',
+  '/org-chart': 'view-org-chart',
+  '/organizational-charts': 'view-org-chart',
+  '/organization': 'view-org-chart',
+  '/teams': 'view-org-chart',
+  '/employee-documents': 'view-employee-documents',
+  '/documents': 'view-employee-documents',
+  '/thermal-paper': 'view-thermal-paper',
+  '/thermal': 'view-thermal-paper',
+  '/thermal-summary': 'view-thermal-paper'
 };
 
 const VIEW_TO_ROUTE = {
@@ -202,11 +213,12 @@ const VIEW_TO_ROUTE = {
   'view-tracking': '/live-tracking',
   'view-pipelines': '/sales-collection',
   'view-finance': '/expenses',
-  'view-inventory': '/inventory',
-  'view-reports': '/reports',
-  'view-restdays': '/rest-days',
-  'view-organization': '/organization',
-  'view-ocr': '/ocr'
+  'view-inventory': '/outlet-rentals',
+  'view-user-management': '/user-management',
+  'view-workforce-attendance': '/workforce-attendance',
+  'view-org-chart': '/org-chart',
+  'view-employee-documents': '/employee-documents',
+  'view-thermal-paper': '/thermal-paper'
 };
 
 function resolveCurrentRoute() {
@@ -290,6 +302,19 @@ function initNavigation() {
 }
 
 window.switchView = function(viewId, updateHistory = true) {
+  if (window.authManager && typeof window.authManager.canAccessView === 'function') {
+    if (!window.authManager.canAccessView(viewId)) {
+      alert('Permission Denied: Your account role does not have permission to access this module.');
+      const fallbackView = (window.authManager.isTeller && (window.authManager.isTeller() || window.authManager.isReliever()))
+        ? 'view-workforce-attendance'
+        : 'view-dashboard';
+      if (viewId !== fallbackView) {
+        window.switchView(fallbackView, true);
+      }
+      return;
+    }
+  }
+
   if (window.sfx) sfx.playClick();
   
   // Update sidebar active classes
@@ -321,6 +346,8 @@ window.switchView = function(viewId, updateHistory = true) {
     setTimeout(() => {
       if (window.etsMap && window.etsMap.map) window.etsMap.map.invalidateSize();
     }, 100);
+  } else if (viewId === 'view-employees') {
+    renderEmployeesTable();
   } else if (viewId === 'view-dashboard') {
     setTimeout(() => {
       renderCharts();
@@ -328,6 +355,34 @@ window.switchView = function(viewId, updateHistory = true) {
   } else if (viewId === 'view-finance') {
     if (window.expensesPayment) {
       window.expensesPayment.init();
+    }
+  } else if (viewId === 'view-inventory') {
+    if (window.outletRentals) {
+      if (!window.outletRentals._initialized) {
+        window.outletRentals.init();
+      } else {
+        window.outletRentals.render();
+      }
+    }
+  } else if (viewId === 'view-thermal-paper') {
+    if (window.thermalPaperModule) {
+      window.thermalPaperModule.render();
+    }
+  } else if (viewId === 'view-user-management') {
+    if (window.userManagementModule) {
+      window.userManagementModule.render();
+    }
+  } else if (viewId === 'view-workforce-attendance') {
+    if (window.workforceAttendanceModule) {
+      window.workforceAttendanceModule.render();
+    }
+  } else if (viewId === 'view-org-chart') {
+    if (window.orgChartModule) {
+      window.orgChartModule.render();
+    }
+  } else if (viewId === 'view-employee-documents') {
+    if (window.employeeDocumentsModule) {
+      window.employeeDocumentsModule.render();
     }
   }
 
@@ -347,16 +402,21 @@ window.switchView = function(viewId, updateHistory = true) {
 
 function updateSidebarBadges() {
   const store = window.appStore;
-  const emps = store.getEmployees();
-  const restDays = store.getRestDays().filter(r => r.status.includes('Pending'));
+  const emps = store.getEmployees() || [];
+  
+  // Exclude Operations Administrator, Supervisors, and Collectors from Master Registry staff count
+  const operationalEmps = emps.filter(e => {
+    const r = (e.role || '').toUpperCase();
+    const d = (e.department || '').toLowerCase();
+    const isLeadershipOrCollector = r.includes('ADMIN') || r.includes('SUPERVISOR') || r.includes('TEAM LEADER') || r.includes('COLLECTOR') || d === 'dept-admin' || d === 'dept-sup' || d === 'dept-col';
+    return !isLeadershipOrCollector;
+  });
+
   const inv = store.getInventory();
   const lowPaper = inv.filter(i => i.type === 'THERMAL PAPER' && (i.quantity < 25 || i.status === 'Low Stock Alert'));
 
   const empBadge = document.getElementById('sidebar-emp-count');
-  if (empBadge) empBadge.textContent = emps.length;
-
-  const rdBadge = document.getElementById('sidebar-rd-count');
-  if (rdBadge) rdBadge.textContent = restDays.length;
+  if (empBadge) empBadge.textContent = operationalEmps.length;
 
   const invAlert = document.getElementById('sidebar-inv-alert');
   if (invAlert) {
@@ -368,362 +428,289 @@ function updateSidebarBadges() {
 // VIEW 1: EXECUTIVE DASHBOARD
 // =========================================================================
 // =========================================================================
-// VIEW 1: OPERATIONS CONTROL CENTER & EXECUTIVE DASHBOARD
+// VIEW 1: CENTRAL CONTROL CENTER & EXECUTIVE DASHBOARD
 // =========================================================================
+let currentDashboardMuniFilter = 'ALL';
+
 function renderDashboard() {
   const store = window.appStore;
-  const summary = store.getFinancialSummary();
-  const employees = store.getEmployees();
-  const booths = store.getBooths();
-  const inv = store.getInventory(false);
+  if (!store || !store.data) return;
 
-  // 1. Update 8 Summary Cards (Live Connected with Modules)
-  const elTotalEmps = document.getElementById('dash-total-employees');
-  if (elTotalEmps) elTotalEmps.textContent = `${employees.length} Active`;
+  const employees = store.getEmployees() || [];
+  const booths = store.getBooths() || [];
+  const inv = store.getInventory(false) || [];
+  const txns = store.data.transactions || [];
+  const outletRentals = store.data.outletRentals || [];
 
-  const elActiveBooths = document.getElementById('dash-active-booths');
-  if (elActiveBooths) elActiveBooths.textContent = `${booths.length} Stations`;
+  // A. Workforce Authoritative Metrics (from Master Registry)
+  const totalStaff = employees.length;
+  const countTellers = employees.filter(e => {
+    const r = (e.role || '').toUpperCase();
+    return r.includes('TELLER') || r.includes('SALES REP') || r.includes('RELIEVER');
+  }).length;
+  const countCollectors = employees.filter(e => (e.role || '').toUpperCase().includes('COLLECTOR')).length;
+  const countSupervisors = employees.filter(e => (e.role || '').toUpperCase().includes('SUPERVISOR')).length;
+  const countAdmins = employees.filter(e => {
+    const r = (e.role || '').toUpperCase();
+    return r.includes('ADMIN') || r.includes('TEAM LEADER') || (e.department || '').includes('admin');
+  }).length;
+  const countActiveStaff = employees.filter(e => (e.status || 'ACTIVE').toUpperCase() === 'ACTIVE').length;
+  const countTerminatedStaff = employees.filter(e => (e.status || '').toUpperCase() === 'TERMINATED').length;
 
-  const elTotalProps = document.getElementById('dash-total-properties');
-  if (elTotalProps) elTotalProps.textContent = `${inv.length} Registered`;
+  // B. Booths Authoritative Metrics (from Master Registry)
+  const totalBooths = booths.length;
+  const assignedBooths = booths.filter(b => b.assignedTellerName || b.assignedTellerId).length;
+  const inactiveBooths = Math.max(0, totalBooths - assignedBooths);
 
-  const elAssignedProps = document.getElementById('dash-assigned-properties');
-  if (elAssignedProps) {
-    const assignedCount = inv.filter(i => i.status === 'Assigned' || i.status === 'Deployed').length;
-    elAssignedProps.textContent = `${assignedCount} Assigned`;
+  // Municipal Counts (from Master Registry booths)
+  const muniCounts = {
+    'Sto. Tomas': 0,
+    'Tagum City': 0,
+    'Carmen': 0,
+    'Panabo City': 0,
+    'Kapalong': 0,
+    'Talaingod': 0
+  };
+  booths.forEach(b => {
+    const area = (b.area || b.municipality || '').trim();
+    if (area.includes('Tagum')) muniCounts['Tagum City']++;
+    else if (area.includes('Panabo')) muniCounts['Panabo City']++;
+    else if (area.includes('Carmen')) muniCounts['Carmen']++;
+    else if (area.includes('Kapalong')) muniCounts['Kapalong']++;
+    else if (area.includes('Talaingod')) muniCounts['Talaingod']++;
+    else muniCounts['Sto. Tomas']++;
+  });
+
+  // C. Sales & Collection Authoritative Metrics (Strictly from actual transactions)
+  const summary = store.getFinancialSummary ? store.getFinancialSummary() : { totalIncome: 0 };
+  const totalCollection = summary.totalIncome || 0; // 0 if reset -> ₱0.00
+
+  // D. Expenses & Payment Authoritative Metrics (Strictly from actual transactions)
+  let totalExpenses = 0, totalShortages = 0, totalCashAdvances = 0, totalPayments = 0;
+  txns.forEach(t => {
+    const a = Number(t.amount) || 0;
+    if (t.classification === 'OTHER' || t.type === 'EXPENSE' || t.isExpense) totalExpenses += a;
+    else if (t.classification === 'SHORT' || t.type === 'SHORT' || (t.description && t.description.toUpperCase().includes('SHORT'))) totalShortages += a;
+    else if (t.classification === 'CA' || t.type === 'CASH ADVANCE' || (t.description && t.description.toUpperCase().includes('CASH ADVANCE'))) totalCashAdvances += a;
+    else if (t.classification === 'PAYMENT' || t.type === 'PAYMENT') totalPayments += a;
+  });
+
+  const activeShortRemaining = Math.max(0, totalShortages - totalPayments);
+  const activeCARemaining = Math.max(0, totalCashAdvances - (txns.filter(t => (t.type === 'PAYMENT' || t.classification === 'PAYMENT') && t.applyToCA).reduce((sum, t) => sum + (Number(t.amount) || 0), 0)));
+
+  // E. Outlet Rentals & Load Allowance Authoritative Metrics (Strictly from Outlet Rentals module)
+  let totalRentalsAmt = 0, totalLoadAmt = 0, activeRentalsCount = 0;
+  outletRentals.forEach(r => {
+    const a = Number(r.amount) || 0;
+    if (r.category === 'Outlet Rental') {
+      totalRentalsAmt += a;
+      activeRentalsCount++;
+    } else if (r.category === 'Load Allowance') {
+      totalLoadAmt += a;
+    }
+  });
+
+  // F. Thermal Paper Authoritative Metrics (Strictly from Thermal Paper Daily Summary)
+  let stocksOnHand = 0;
+  let rollsAllocated = 0;
+  let rollsRemaining = 0;
+  if (window.thermalPaperModule && typeof window.thermalPaperModule.calculateDailyStocks === 'function') {
+    const tpSummary = window.thermalPaperModule.calculateDailyStocks(window.thermalPaperModule.selectedDate || '2026-09-29');
+    stocksOnHand = tpSummary.stocksOnHand || 0;
+    rollsAllocated = tpSummary.totalAllocated || 0;
+    rollsRemaining = tpSummary.rollsRemaining || 0;
+  } else {
+    const thermalSummary = (store.data && store.data.thermalPaperDailySummary) || {};
+    stocksOnHand = thermalSummary.stocksOnHand || 0;
+    if (thermalSummary.allocations && Array.isArray(thermalSummary.allocations)) {
+      rollsAllocated = thermalSummary.allocations.reduce((sum, item) => sum + (Number(item.rollsAllocated || item.rolls) || 0), 0);
+    }
+    rollsRemaining = Math.max(0, stocksOnHand - rollsAllocated);
   }
 
-  const elTodayExp = document.getElementById('dash-today-expenses');
-  if (elTodayExp) elTodayExp.textContent = formatPHP(summary.totalExpenses);
+  // Safe element text updater
+  const setEl = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
 
-  const elTodayColl = document.getElementById('dash-today-collection');
-  if (elTodayColl) elTodayColl.textContent = formatPHP(summary.totalIncome);
+  // 1. Top KPI Summary Cards
+  setEl('dash-total-employees', totalStaff + ' Personnel');
+  setEl('dash-active-booths', assignedBooths + ' / ' + totalBooths + ' Outlets');
+  setEl('dash-total-properties', activeRentalsCount + ' Leased Outlets');
+  setEl('dash-today-collection', formatPHP(totalCollection));
+  setEl('dash-live-ets', assignedBooths + ' / ' + totalBooths + ' Online');
+  setEl('dash-thermal-stock', rollsRemaining + ' Rolls');
 
-  const elLiveEts = document.getElementById('dash-live-ets');
-  if (elLiveEts) elLiveEts.textContent = `${booths.length} / ${booths.length} Online`;
+  // 2. Control Center Workforce Breakdown
+  setEl('dash-wf-total', totalStaff);
+  setEl('dash-wf-tellers', countTellers);
+  setEl('dash-wf-collectors', countCollectors);
+  setEl('dash-wf-supervisors', countSupervisors);
+  setEl('dash-wf-admins', countAdmins);
+  setEl('dash-wf-active', countActiveStaff);
+  setEl('dash-wf-terminated', countTerminatedStaff);
 
-  const elEodStatus = document.getElementById('dash-eod-status');
-  if (elEodStatus) elEodStatus.textContent = 'Balancing';
+  // 3. Control Center Booth Breakdown by Municipality
+  setEl('dash-booth-total', totalBooths);
+  setEl('dash-booth-muni-stomas', muniCounts['Sto. Tomas'] + ' Outlets');
+  setEl('dash-booth-muni-tagum', muniCounts['Tagum City'] + ' Outlets');
+  setEl('dash-booth-muni-carmen', muniCounts['Carmen'] + ' Outlets');
+  setEl('dash-booth-muni-panabo', muniCounts['Panabo City'] + ' Outlets');
+  setEl('dash-booth-muni-kapalong', muniCounts['Kapalong'] + ' Outlets');
+  setEl('dash-booth-muni-talaingod', muniCounts['Talaingod'] + ' Outlets');
 
-  // 2. Section 5.A: Live Operations (Booth Activity Table)
-  renderDashboardLiveOperations();
+  // 4. Control Center Cash Advance & Ledger
+  setEl('dash-fin-ca', formatPHP(totalCashAdvances));
+  setEl('dash-fin-ca-balance', formatPHP(activeCARemaining));
+  setEl('dash-fin-short', formatPHP(totalShortages));
+  setEl('dash-fin-payments', formatPHP(totalPayments));
 
-  // 3. Section 5.D: Financial Snapshot
-  const snapColl = document.getElementById('dash-snap-collections');
-  if (snapColl) snapColl.textContent = formatPHP(summary.totalIncome);
+  // 5. Control Center Thermal & Equipment
+  setEl('dash-inv-remaining', rollsRemaining + ' Rolls');
+  setEl('dash-inv-allocated', rollsAllocated + ' Rolls');
+  setEl('dash-rent-total', formatPHP(totalRentalsAmt));
+  setEl('dash-load-total', formatPHP(totalLoadAmt));
 
-  const snapExp = document.getElementById('dash-snap-expenses');
-  if (snapExp) snapExp.textContent = formatPHP(summary.totalExpenses);
-
-  const snapNet = document.getElementById('dash-snap-net');
-  if (snapNet) snapNet.textContent = formatPHP(summary.netCashFlow);
-
-  // 4. Section 5.B: Recent Activity Chronological Feed
-  renderDashboardActivityFeed();
-
-  // 5. Section 5.C: Inventory & Hardware Alerts
-  renderDashboardInventoryAlerts();
-
-  // 6. Interactive Charts
-  renderCharts();
+  // 6. Render Dynamic Live Operations Table & Municipality Pills
+  renderDashboardLiveOperations(currentDashboardMuniFilter);
 }
 
-function renderDashboardLiveOperations() {
+window.filterDashboardMuni = function(muni) {
+  currentDashboardMuniFilter = muni;
+  renderDashboardLiveOperations(muni);
+};
+
+function renderDashboardLiveOperations(selectedMuni) {
+  if (!selectedMuni) selectedMuni = 'ALL';
+  const container = document.getElementById('dash-muni-pills-container');
   const tbody = document.getElementById('dash-live-operations-tbody');
+  const store = window.appStore;
+  if (!store) return;
+
+  const booths = store.getBooths() || [];
+  const employees = store.getEmployees() || [];
+  const txns = store.data.transactions || [];
+
+  // 1. Calculate dynamic municipality counts from Master Registry booths
+  const muniCounts = {
+    'Sto. Tomas': 0,
+    'Tagum City': 0,
+    'Carmen': 0,
+    'Panabo City': 0,
+    'Kapalong': 0
+  };
+
+  booths.forEach(b => {
+    const area = (b.area || b.municipality || '').trim();
+    if (area.includes('Tagum')) muniCounts['Tagum City']++;
+    else if (area.includes('Panabo')) muniCounts['Panabo City']++;
+    else if (area.includes('Carmen')) muniCounts['Carmen']++;
+    else if (area.includes('Kapalong')) muniCounts['Kapalong']++;
+    else muniCounts['Sto. Tomas']++;
+  });
+
+  // 2. Render Municipality Pills
+  if (container) {
+    const pillConfigs = [
+      { key: 'ALL', label: 'All Municipalities', count: booths.length, badgeClass: 'badge-neutral' },
+      { key: 'Sto. Tomas', label: 'Sto. Tomas', count: muniCounts['Sto. Tomas'], badgeClass: 'badge-info' },
+      { key: 'Tagum City', label: 'Tagum City', count: muniCounts['Tagum City'], badgeClass: 'badge-purple' },
+      { key: 'Carmen', label: 'Carmen', count: muniCounts['Carmen'], badgeClass: 'badge-success' },
+      { key: 'Panabo City', label: 'Panabo City', count: muniCounts['Panabo City'], badgeClass: 'badge-warning' },
+      { key: 'Kapalong', label: 'Kapalong', count: muniCounts['Kapalong'], badgeClass: 'badge-neutral' }
+    ];
+
+    container.innerHTML = pillConfigs.map(p => {
+      const isSelected = (selectedMuni === p.key || (selectedMuni === 'ALL' && p.key === 'ALL'));
+      const activeStyle = isSelected
+        ? 'border: 2px solid var(--primary); background: rgba(59, 130, 246, 0.2); font-weight: 800; transform: scale(1.03);'
+        : 'opacity: 0.85; cursor: pointer;';
+
+      return `
+        <span class="badge ${p.badgeClass} clickable" 
+          onclick="window.filterDashboardMuni('${p.key}')"
+          style="padding: 6px 12px; font-size: 12px; cursor: pointer; transition: all 0.15s ease; ${activeStyle}"
+          title="Filter by ${p.label}">
+          ${p.label}: <strong>${p.count} Outlets</strong>
+        </span>
+      `;
+    }).join('');
+  }
+
+  // 3. Filter booths by selected municipality
+  let filteredBooths = booths;
+  if (selectedMuni && selectedMuni !== 'ALL') {
+    filteredBooths = booths.filter(b => {
+      const area = (b.area || b.municipality || '').toLowerCase();
+      const target = selectedMuni.toLowerCase().replace(' city', '');
+      return area.includes(target);
+    });
+  }
+
   if (!tbody) return;
 
-  const store = window.appStore;
-  const booths = store.getBooths().slice(0, 8); // Top sector representative stations
+  if (filteredBooths.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">
+          No outlets registered for ${selectedMuni} in Master Registry.
+        </td>
+      </tr>
+    `;
+    return;
+  }
 
-  tbody.innerHTML = booths.map((b, idx) => {
-    const sampleIntakes = [42850, 38200, 51400, 31900, 46100, 39500, 48250, 44100];
-    const intake = sampleIntakes[idx % sampleIntakes.length];
+  tbody.innerHTML = filteredBooths.map(b => {
+    // Find assigned teller / sales rep in Master Registry
+    const assignedEmp = employees.find(e => (e.boothCode === b.id || e.booth === b.id) && (e.status || 'ACTIVE').toUpperCase() !== 'TERMINATED');
+    const tellerName = assignedEmp ? assignedEmp.name : (b.assignedTellerName || 'Unassigned');
+    const isOnline = assignedEmp && (assignedEmp.status || 'ACTIVE').toUpperCase() === 'ACTIVE';
+
+    // Calculate actual collection intake for this specific booth from sales/collection transactions
+    const boothTxns = txns.filter(t => t.boothCode === b.id || (t.description && t.description.includes(b.id)));
+    const boothIntake = boothTxns.reduce((sum, t) => {
+      const a = Number(t.amount) || 0;
+      if (t.type === 'COLLECTION' || t.classification === 'INCOME' || (!t.isExpense && !t.isShortage && !t.isCashAdvance && t.type !== 'PAYMENT')) {
+        return sum + a;
+      }
+      return sum;
+    }, 0);
+
+    const muniDisplay = b.municipality || (b.area && b.area !== '-' ? b.area : 'Sto. Tomas');
+    const locDisplay = b.location || b.address || b.area || '-';
 
     return `
       <tr>
-        <td><strong><code>${b.id}</code></strong></td>
+        <td><strong><code style="font-size: 12px; color: var(--primary); font-weight: 700;">${b.id}</code></strong></td>
         <td>
-          <div style="font-weight: 600;">${b.assignedTellerName || 'Buffer Teller'}</div>
-          <div style="font-size: 10.5px; color: var(--text-dim);">POS-${b.id}</div>
+          <div style="font-weight: 600; color: var(--text-main); font-size: 12px;">${tellerName}</div>
+          <div style="font-size: 10.5px; color: var(--text-dim); font-family: monospace;">POS-${b.id}</div>
         </td>
         <td>
-          <div style="font-size: 11.5px; color: var(--text-muted); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${b.area || b.municipality}">
-            ${b.area || b.municipality}
+          <div style="font-size: 11.5px; color: var(--text-muted); max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${locDisplay}">
+            ${locDisplay}
           </div>
         </td>
-        <td style="text-align: right; font-weight: 700; color: var(--success); font-family: var(--font-mono);">
-          ₱${intake.toLocaleString()}
+        <td>
+          <span style="font-size: 12px; font-weight: 600; color: var(--text-main);">${muniDisplay}</span>
+        </td>
+        <td style="text-align: right; font-weight: 700; color: ${boothIntake > 0 ? 'var(--success)' : 'var(--text-dim)'}; font-family: var(--font-mono);">
+          ${formatPHP(boothIntake)}
         </td>
         <td style="text-align: center;">
-          <span class="badge badge-success" style="font-size: 10.5px; padding: 2px 6px;">● Online</span>
+          ${isOnline 
+            ? '<span class="badge badge-success" style="font-size: 10.5px; padding: 2px 8px;">● Online</span>' 
+            : '<span class="badge badge-neutral" style="font-size: 10.5px; padding: 2px 8px; opacity: 0.65;">○ Offline</span>'}
         </td>
       </tr>
     `;
   }).join('');
 }
 
-function renderDashboardActivityFeed() {
-  const tbody = document.getElementById('dash-activity-feed-tbody');
-  if (!tbody) return;
-
-  const activities = [
-    {
-      time: '14:45 PST',
-      event: 'Davilyn Gelito assigned POS Machine (Sunmi V2 #003)',
-      person: 'Davilyn Gelito',
-      role: 'Teller',
-      module: 'Inventory',
-      view: 'view-inventory',
-      badge: 'badge-purple'
-    },
-    {
-      time: '14:20 PST',
-      event: 'Collection remittance confirmed for Field Route (₱1,200.00)',
-      person: 'JOHN',
-      role: 'Collector',
-      module: 'Collection',
-      view: 'view-pipelines',
-      badge: 'badge-success'
-    },
-    {
-      time: '13:50 PST',
-      event: 'Station DDN-352 Salvacion location re-verified',
-      person: 'Jehramea Marte',
-      role: 'Teller',
-      module: 'Registry',
-      view: 'view-employees',
-      badge: 'badge-info'
-    },
-    {
-      time: '13:15 PST',
-      event: 'Sunmi V2 (#010) reported print error, marked Under Repair',
-      person: 'Trexy Echaverie',
-      role: 'Hardware Bench',
-      module: 'Inventory',
-      view: 'view-inventory',
-      badge: 'badge-warning'
-    },
-    {
-      time: '12:30 PST',
-      event: 'Midday Collection Batch remitted for Sto. Tomas (₱74,776.50)',
-      person: 'JOHN & Davilyn',
-      role: 'Field Ops',
-      module: 'Collection',
-      view: 'view-pipelines',
-      badge: 'badge-success'
-    },
-    {
-      time: '11:10 PST',
-      event: 'EOD Daily Report Initial Balancing check completed',
-      person: 'Peter John Carrillo',
-      role: 'Supervisor',
-      module: 'EOD Report',
-      view: 'view-reports',
-      badge: 'badge-neutral'
-    }
-  ];
-
-  tbody.innerHTML = activities.map(a => `
-    <tr>
-      <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${a.time}</td>
-      <td>
-        <div style="font-weight: 600; color: var(--text-main);">${a.event}</div>
-      </td>
-      <td>
-        <span style="font-size: 12px; font-weight: 500;">${a.person}</span>
-        <span style="font-size: 10px; color: var(--text-dim); display: block;">${a.role}</span>
-      </td>
-      <td style="text-align: center;">
-        <span class="badge ${a.badge} clickable" onclick="window.switchView('${a.view}')" style="cursor: pointer;" title="Jump to ${a.module} module">
-          ${a.module} →
-        </span>
-      </td>
-    </tr>
-  `).join('');
-}
-
-function renderDashboardInventoryAlerts() {
-  const container = document.getElementById('dash-inventory-alerts-container');
-  if (!container) return;
-
-  const store = window.appStore;
-  const inv = store.getInventory(false);
-
-  // Surface items requiring attention: Under Repair, Missing, Damaged, Available buffer
-  const alertItems = inv.filter(i => 
-    i.status === 'Under Repair' || 
-    i.status === 'Missing' || 
-    i.condition === 'Damaged' || 
-    i.condition === 'For Repair' || 
-    i.condition === 'Lost' ||
-    i.status === 'Available'
-  );
-
-  if (alertItems.length === 0) {
-    container.innerHTML = `
-      <div style="text-align: center; padding: 24px; color: var(--text-muted);">
-        <div style="font-size: 24px; margin-bottom: 6px;">✅</div>
-        <div>All registered properties are assigned and operational</div>
-      </div>
-    `;
-    return;
-  }
-
-  container.innerHTML = alertItems.map(item => {
-    let severityBorder = 'var(--warning)';
-    let badgeClass = 'badge-warning';
-    let alertLabel = 'Action Required';
-
-    if (item.status === 'Under Repair' || item.condition === 'Damaged') {
-      severityBorder = 'var(--warning)';
-      badgeClass = 'badge-warning';
-      alertLabel = 'Under Repair / Bench';
-    } else if (item.status === 'Missing' || item.condition === 'Lost') {
-      severityBorder = 'var(--danger)';
-      badgeClass = 'badge-danger';
-      alertLabel = 'Missing / Lost Flag';
-    } else if (item.status === 'Available') {
-      severityBorder = 'var(--info)';
-      badgeClass = 'badge-info';
-      alertLabel = 'Depot Buffer Ready';
-    }
-
-    return `
-      <div style="background: var(--bg-surface-elevated); padding: 12px 14px; border-radius: var(--radius-sm); border-left: 3px solid ${severityBorder}; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
-        <div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px;">
-            <span class="badge ${badgeClass}" style="font-size: 10px; padding: 2px 6px;">${alertLabel}</span>
-            <strong style="font-size: 12.5px; color: var(--text-main);">No. ${item.no} • ${item.brandModel}</strong>
-          </div>
-          <div style="font-size: 11px; color: var(--text-muted);">
-            Type: <strong>${item.type}</strong> • Serial: <code>${item.serial}</code>
-          </div>
-          <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
-            Assigned: ${item.assignedTo} [${item.boothCode}] • Condition: <strong>${item.condition}</strong>
-          </div>
-        </div>
-        <button class="btn btn-secondary btn-sm" onclick="window.jumpToInventoryProperty('${item.no}')" style="white-space: nowrap; font-size: 11.5px;">
-          View in Inventory →
-        </button>
-      </div>
-    `;
-  }).join('');
-}
-
-window.jumpToInventoryProperty = function(propertyNo) {
-  window.switchView('view-inventory');
-  setTimeout(() => {
-    const searchInput = document.getElementById('inv-search-input');
-    if (searchInput) {
-      searchInput.value = propertyNo;
-      window.filterInventoryTable();
-    }
-  }, 100);
-};
-
-function renderCharts() {
-  const ctxRevenue = document.getElementById('chart-revenue-expenses');
-  const ctxBooth = document.getElementById('chart-booth-share');
-  if (!ctxRevenue || !ctxBooth) return;
-
-  const currentTheme = document.documentElement.getAttribute('data-theme') || 'corporate';
-  const isLight = currentTheme === 'light' || currentTheme === 'vintage' || currentTheme === 'material';
-  const textColor = isLight ? '#334155' : '#94a3b8';
-  const gridColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
-
-  // 1. Hourly Revenue vs Expense Chart
-  if (revenueChart) revenueChart.destroy();
-
-  const labels = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '21:30'];
-  const collectionsData = [35000, 68000, 94000, 112000, 89000, 125000, 140000, 78000];
-  const expensesData = [1200, 2400, 850, 7500, 1500, 800, 1200, 450];
-
-  revenueChart = new Chart(ctxRevenue, {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: 'Collection Inflow (₱)',
-          data: collectionsData,
-          backgroundColor: 'rgba(59, 130, 246, 0.75)',
-          borderColor: '#3b82f6',
-          borderWidth: 1.5,
-          borderRadius: 4
-        },
-        {
-          label: 'Operating Expenses (₱)',
-          data: expensesData,
-          backgroundColor: 'rgba(239, 68, 68, 0.75)',
-          borderColor: '#ef4444',
-          borderWidth: 1.5,
-          borderRadius: 4
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          labels: { color: textColor, font: { family: 'Inter', size: 12 } }
-        }
-      },
-      scales: {
-        x: {
-          ticks: { color: textColor },
-          grid: { color: gridColor }
-        },
-        y: {
-          ticks: {
-            color: textColor,
-            callback: (val) => '₱' + (val / 1000) + 'k'
-          },
-          grid: { color: gridColor }
-        }
-      }
-    }
-  });
-
-  // 2. Booth Distribution Doughnut Chart
-  if (boothShareChart) boothShareChart.destroy();
-
-  const boothLabels = ['Sto. Tomas', 'Tagum City', 'Carmen', 'Panabo City', 'Kapalong'];
-  const boothData = [145000, 95000, 85000, 62000, 25000];
-
-  boothShareChart = new Chart(ctxBooth, {
-    type: 'doughnut',
-    data: {
-      labels: boothLabels,
-      datasets: [{
-        data: boothData,
-        backgroundColor: [
-          '#3b82f6',
-          '#10b981',
-          '#f59e0b',
-          '#8b5cf6',
-          '#06b6d4'
-        ],
-        borderWidth: 2,
-        borderColor: isLight ? '#ffffff' : '#1e293b'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'right',
-          labels: { color: textColor, font: { family: 'Inter', size: 11 } }
-        }
-      },
-      cutout: '65%'
-    }
-  });
-}
-
+window.renderDashboard = renderDashboard;
 window.refreshDashboard = function() {
-  sfx.playChime();
+  if (typeof sfx !== 'undefined' && sfx.playChime) sfx.playChime();
   renderDashboard();
 };
 
@@ -793,7 +780,7 @@ window.filterRegistryCategory = function(cat) {
   currentRegistryCategory = cat;
   registryCurrentPage = 1;
 
-  ['all', 'supervisors', 'collectors', 'tellers', 'relievers', 'inactive-booths'].forEach(c => {
+  ['all', 'tellers', 'relievers', 'inactive-booths', 'terminated', 'supervisors', 'collectors'].forEach(c => {
     const btn = document.getElementById(`tab-btn-${c}`);
     if (btn) {
       if (c === cat) {
@@ -827,6 +814,7 @@ window.updateEmployeeStatus = function(id, newStatus) {
   const normStatus = (newStatus || 'ACTIVE').toUpperCase();
   window.appStore.updateEmployee(id, { status: normStatus });
   renderEmployeesTable();
+  if (window.orgChartModule && typeof window.orgChartModule.render === 'function') window.orgChartModule.render();
   if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
   if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
 };
@@ -845,22 +833,47 @@ window.handleRoleChangeInModal = function(role) {
   if (!deptSelect) return;
   if (rUpper.includes('COLLECTOR')) {
     deptSelect.value = 'dept-col';
-  } else if (rUpper.includes('SUPERVISOR') || rUpper.includes('TEAM LEADER')) {
+  } else if (rUpper.includes('SUPERVISOR')) {
     deptSelect.value = 'dept-sup';
-  } else if (rUpper.includes('TELLER') || rUpper.includes('SALES REPRESENTATIVE')) {
+  } else if (rUpper.includes('ADMINISTRATOR') || rUpper.includes('ADMIN') || rUpper.includes('TEAM LEADER')) {
+    deptSelect.value = 'dept-admin';
+  } else {
     deptSelect.value = 'dept-tel';
   }
 };
 
+window.handleDeptChangeInModal = function(dept) {
+  const dVal = (dept || '').toLowerCase();
+  const roleSelect = document.getElementById('emp-form-role');
+  if (!roleSelect) return;
+  if (dVal === 'dept-col' || dVal.includes('collector')) {
+    roleSelect.value = 'COLLECTOR';
+  } else if (dVal === 'dept-sup' || dVal.includes('supervisor')) {
+    roleSelect.value = 'SUPERVISOR';
+  } else if (dVal === 'dept-admin' || dVal.includes('admin')) {
+    roleSelect.value = 'OPERATIONS ADMINISTRATOR';
+  } else {
+    roleSelect.value = 'TELLER';
+  }
+};
+
 let pendingDeleteEmployeeId = null;
+let pendingDeleteTargetName = '';
 
 window.requestDeleteEmployee = function(id) {
-  sfx.playAlert();
+  if (window.authManager && !window.authManager.isAdmin()) {
+    alert('Permission Denied: Only Administrators can delete records.');
+    return;
+  }
+  if (window.sfx) sfx.playAlert();
   pendingDeleteEmployeeId = id;
   const store = window.appStore;
   const emp = store.getEmployees().find(e => e.id === id) || 
               (store.data.relievers && store.data.relievers.find(r => r.id === id));
-  const empName = emp ? `${emp.name} (${emp.id})` : id;
+  const booth = (store.data && store.data.booths) ? store.data.booths.find(b => b.id === id || b.id === `BOOTH-${id}` || b.code === id) : null;
+  
+  const empName = emp ? (emp.name && emp.name !== 'N/A' ? `${emp.name} (${emp.id})` : `Booth ${emp.boothCode || emp.id}`) : (booth ? `Station ${booth.id}` : id);
+  pendingDeleteTargetName = empName;
 
   const msgEl = document.getElementById('delete-confirm-message');
   if (msgEl) {
@@ -877,21 +890,70 @@ window.requestDeleteEmployee = function(id) {
 
 window.confirmDeleteEmployee = function() {
   if (!pendingDeleteEmployeeId) return;
-  sfx.playChime();
+  const deletedName = pendingDeleteTargetName || pendingDeleteEmployeeId;
+  if (window.sfx) sfx.playChime();
   window.appStore.deleteEmployee(pendingDeleteEmployeeId);
   pendingDeleteEmployeeId = null;
+  pendingDeleteTargetName = '';
   document.getElementById('modal-delete-confirm').classList.remove('active');
   renderEmployeesTable();
+  if (window.orgChartModule && typeof window.orgChartModule.render === 'function') window.orgChartModule.render();
   renderFleetTrackingList();
   if (window.etsMap && window.etsMap.renderAllMarkers) {
     window.etsMap.renderAllMarkers();
   }
+  alert(`✓ Data is successfully deleted: ${deletedName} has been permanently removed from the system registry.`);
 };
 
 window.cancelDeleteEmployee = function() {
-  sfx.playClick();
+  if (window.sfx) sfx.playClick();
   pendingDeleteEmployeeId = null;
+  pendingDeleteTargetName = '';
   document.getElementById('modal-delete-confirm').classList.remove('active');
+};
+
+let pendingReactivateTellerId = null;
+
+window.promptReactivateTeller = function(id) {
+  if (window.authManager && !window.authManager.isAdmin()) {
+    alert('Permission Denied: Only Administrators can reactivate tellers.');
+    return;
+  }
+  if (window.sfx) sfx.playClick();
+  pendingReactivateTellerId = id;
+  const store = window.appStore;
+  const emp = store.getEmployees().find(e => e.id === id);
+  if (!emp) return;
+
+  const nameEl = document.getElementById('reactivate-teller-name');
+  const boothEl = document.getElementById('reactivate-teller-booth');
+  if (nameEl) nameEl.textContent = `${emp.name} (${emp.id})`;
+  if (boothEl) boothEl.textContent = emp.boothCode || emp.booth || '-';
+
+  const modal = document.getElementById('modal-reactivate-confirm');
+  if (modal) modal.classList.add('active');
+};
+
+window.confirmReactivateTeller = function() {
+  if (!pendingReactivateTellerId) return;
+  if (window.sfx) sfx.playChime();
+  window.appStore.updateEmployee(pendingReactivateTellerId, { status: 'ACTIVE' });
+  pendingReactivateTellerId = null;
+  const modal = document.getElementById('modal-reactivate-confirm');
+  if (modal) modal.classList.remove('active');
+  renderEmployeesTable();
+  alert('Teller status changed to ACTIVE and returned to the active registry.');
+};
+
+window.cancelReactivateTeller = function() {
+  if (window.sfx) sfx.playClick();
+  pendingReactivateTellerId = null;
+  const modal = document.getElementById('modal-reactivate-confirm');
+  if (modal) modal.classList.remove('active');
+};
+
+window.viewEmployeeDetails = function(id) {
+  window.editEmployee(id, true);
 };
 
 function renderEmployeesTable(customList = null) {
@@ -907,6 +969,25 @@ function renderEmployeesTable(customList = null) {
   const allStaff = rawEmployees.filter(e => !e.name || !e.name.includes('Buffer Reliever'));
 
   // Strictly categorize by role:
+  const isLeadershipOrCollector = (emp) => {
+    if (!emp) return false;
+    const r = (emp.role || '').toUpperCase();
+    const d = (emp.department || '').toLowerCase();
+    return r.includes('ADMIN') || 
+           r.includes('SUPERVISOR') || 
+           r.includes('TEAM LEADER') || 
+           r.includes('COLLECTOR') || 
+           d === 'dept-admin' || 
+           d === 'dept-sup' || 
+           d === 'dept-col' || 
+           d.includes('admin') || 
+           d.includes('supervisor') || 
+           d.includes('collector');
+  };
+
+  // Operational staff list for All Staff (excluding Leadership and Collectors)
+  const allStaffOperational = allStaff.filter(e => !isLeadershipOrCollector(e));
+
   const supervisors = allStaff.filter(e => (e.role || '').toUpperCase().includes('SUPERVISOR') || (e.role || '').toUpperCase().includes('TEAM LEADER'));
   const collectors = allStaff.filter(e => (e.role || '').toUpperCase().includes('COLLECTOR'));
   const relieversList = allStaff.filter(e => (e.role || '').toUpperCase().includes('RELIEVER') || (e.role || '').toUpperCase().includes('RELIVER'));
@@ -915,29 +996,44 @@ function renderEmployeesTable(customList = null) {
   // Inactive Sales Representatives must NOT be included in this count.
   const tellers = allStaff.filter(e => {
     const r = (e.role || '').toUpperCase();
-    const isOtherRole = r.includes('RELIEVER') || r.includes('RELIVER') || r.includes('SUPERVISOR') || r.includes('COLLECTOR') || r.includes('TEAM LEADER');
+    const isOtherRole = r.includes('RELIEVER') || r.includes('RELIVER') || r.includes('SUPERVISOR') || r.includes('COLLECTOR') || r.includes('TEAM LEADER') || r.includes('ADMIN');
     if (isOtherRole) return false;
     const statusUpper = (e.status || 'ACTIVE').toUpperCase();
     const isNameMissing = !e.name || e.name.trim() === '' || e.name.trim().toUpperCase() === 'N/A' || e.name.trim() === '-';
     return statusUpper === 'ACTIVE' && !isNameMissing;
   });
 
+  // Section 5: 6. Terminated Tellers Registry
+  const terminatedTellers = allStaff.filter(e => {
+    const r = (e.role || '').toUpperCase();
+    const isOtherRole = r.includes('RELIEVER') || r.includes('RELIVER') || r.includes('SUPERVISOR') || r.includes('COLLECTOR') || r.includes('TEAM LEADER') || r.includes('ADMIN');
+    if (isOtherRole) return false;
+    return (e.status || '').toUpperCase() === 'TERMINATED';
+  });
+
   // Section 3: 5. Inactive Booths must include both:
-  // 1. Sales Representative records with STATUS = INACTIVE
-  // 2. Booth records where the Sales Representative name is missing/blank
-  // If an inactive Sales Representative has a Booth Code, count that booth only once. Do not duplicate.
+  // 1. Sales Representative records with STATUS = INACTIVE (Excluding TERMINATED - terminated belong in Terminated Tellers)
+  // 2. Standalone booth records where the Sales Representative name is missing/blank or status is INACTIVE
+  // Rule: ONE BOOTH CODE = ONE RECORD. If an employee in allStaff already has this Booth Code, do not duplicate!
   const seenBoothCodes = new Set();
   const seenRecordIds = new Set();
   const inactiveBooths = [];
 
-  // A. Candidate employee records
+  // Collect all assigned booth codes from employees in allStaff
+  const activeEmpBoothCodes = new Set();
+  allStaff.forEach(emp => {
+    const bCode = (emp.boothCode && emp.boothCode !== '-') ? emp.boothCode.trim().toUpperCase() : (emp.booth && emp.booth !== '-' ? emp.booth.trim().toUpperCase() : null);
+    if (bCode) activeEmpBoothCodes.add(bCode);
+  });
+
+  // A. Candidate employee records (STATUS = INACTIVE only, NOT TERMINATED)
   allStaff.forEach(emp => {
     const r = (emp.role || '').toUpperCase();
-    const isOtherRole = r.includes('SUPERVISOR') || r.includes('TEAM LEADER') || r.includes('COLLECTOR') || r.includes('RELIEVER') || r.includes('RELIVER');
+    const isOtherRole = r.includes('SUPERVISOR') || r.includes('TEAM LEADER') || r.includes('COLLECTOR') || r.includes('RELIEVER') || r.includes('RELIVER') || r.includes('ADMIN');
     if (isOtherRole) return;
 
     const statusUpper = (emp.status || '').toUpperCase();
-    const isInactive = statusUpper === 'INACTIVE' || statusUpper === 'TERMINATED';
+    const isInactive = statusUpper === 'INACTIVE';
     const isNameMissing = !emp.name || emp.name.trim() === '' || emp.name.trim().toUpperCase() === 'N/A' || emp.name.trim() === '-';
 
     if (isInactive || isNameMissing) {
@@ -960,8 +1056,10 @@ function renderEmployeesTable(customList = null) {
   // B. Candidate standalone booth records with missing sales rep or inactive status
   const allBooths = (store.data && store.data.booths) ? store.data.booths : [];
   allBooths.forEach(b => {
-    const bCode = (b.id || b.code || '').trim().toUpperCase();
-    if (!bCode || bCode === '-') return;
+    const bCode = (b.id || b.code || '').trim().toUpperCase().replace(/^BOOTH-/, '');
+    if (!bCode || bCode === '-' || b.id === 'BOOTH-DDN-1140') return;
+    // Rule: ONE BOOTH CODE = ONE ACTIVE BOOTH RECORD. If already assigned to an employee, do not create duplicate!
+    if (activeEmpBoothCodes.has(bCode)) return;
     if (seenBoothCodes.has(bCode)) return;
 
     const tellerName = b.assignedTellerName || b.activeTeller || '';
@@ -1001,28 +1099,34 @@ function renderEmployeesTable(customList = null) {
     }
   });
 
-  // Update dynamic counter badges
-  if (document.getElementById('count-all')) document.getElementById('count-all').textContent = allStaff.length;
+  // Update dynamic counter badges (All Staff count excludes Leadership & Collectors)
+  if (document.getElementById('count-all')) document.getElementById('count-all').textContent = allStaffOperational.length;
   if (document.getElementById('count-supervisors')) document.getElementById('count-supervisors').textContent = supervisors.length;
   if (document.getElementById('count-collectors')) document.getElementById('count-collectors').textContent = collectors.length;
   if (document.getElementById('count-tellers')) document.getElementById('count-tellers').textContent = tellers.length;
   if (document.getElementById('count-relievers')) document.getElementById('count-relievers').textContent = relieversList.length;
   if (document.getElementById('count-inactive-booths')) document.getElementById('count-inactive-booths').textContent = inactiveBooths.length;
+  if (document.getElementById('count-terminated')) document.getElementById('count-terminated').textContent = terminatedTellers.length;
+
+  const empBadge = document.getElementById('sidebar-emp-count');
+  if (empBadge) empBadge.textContent = allStaffOperational.length;
 
   let list = customList;
   if (!list) {
-    if (currentRegistryCategory === 'supervisors') {
-      list = supervisors;
-    } else if (currentRegistryCategory === 'collectors') {
-      list = collectors;
-    } else if (currentRegistryCategory === 'tellers') {
+    if (currentRegistryCategory === 'tellers') {
       list = tellers;
     } else if (currentRegistryCategory === 'relievers') {
       list = relieversList;
     } else if (currentRegistryCategory === 'inactive-booths') {
       list = inactiveBooths;
+    } else if (currentRegistryCategory === 'terminated') {
+      list = terminatedTellers;
+    } else if (currentRegistryCategory === 'supervisors') {
+      list = supervisors;
+    } else if (currentRegistryCategory === 'collectors') {
+      list = collectors;
     } else {
-      list = allStaff;
+      list = allStaffOperational;
     }
   }
 
@@ -1037,6 +1141,7 @@ function renderEmployeesTable(customList = null) {
 
   // Render Table Body for All 11 Exact Columns:
   // | ID No. | Full Name | Role | Purok / Street / Barangay | Municipality | Booth Code | GPS Coordinates | Contact Phone | Status | POS Serial No. | PORTABLE PRINTER NAME | Actions |
+  const isAdmin = typeof window.authManager !== 'undefined' ? window.authManager.isAdmin() : true;
   tbody.innerHTML = pageItems.map(emp => {
     let roleUpper = (emp.role || 'SALES REPRESENTATIVE').toUpperCase();
     if (roleUpper === 'TELLER' || roleUpper === 'STATION TELLER') roleUpper = 'SALES REPRESENTATIVE';
@@ -1115,7 +1220,7 @@ function renderEmployeesTable(customList = null) {
           <span style="font-family: monospace; font-size: 11.5px; color: var(--text-main);">${phoneDisplay}</span>
         </td>
         <td style="text-align: center;">
-          <select class="form-select" style="padding: 3px 8px; font-size: 11px; font-weight: 700; width: auto; border-radius: 4px; display: inline-block; margin: 0 auto; ${statusStyle}" onchange="window.updateEmployeeStatus('${emp.id}', this.value)">
+          <select class="form-select" style="padding: 3px 8px; font-size: 11px; font-weight: 700; width: auto; border-radius: 4px; display: inline-block; margin: 0 auto; ${statusStyle}" ${!isAdmin ? 'disabled title="Supervisor: View-only"' : `onchange="window.updateEmployeeStatus('${emp.id}', this.value)"`}>
             <option value="ACTIVE" ${statusUpper === 'ACTIVE' ? 'selected' : ''}>ACTIVE</option>
             <option value="INACTIVE" ${statusUpper === 'INACTIVE' ? 'selected' : ''}>INACTIVE</option>
             <option value="TERMINATED" ${statusUpper === 'TERMINATED' ? 'selected' : ''}>TERMINATED</option>
@@ -1125,22 +1230,51 @@ function renderEmployeesTable(customList = null) {
           <code style="font-weight: 700; font-size: 11.5px; color: var(--text-main);">${posDisplay}</code>
         </td>
         <td style="text-align: center;">
-          <select class="form-select" style="padding: 3px 8px; font-size: 11px; font-weight: 700; width: auto; border-radius: 4px; display: inline-block; margin: 0 auto; ${isWithPrinter ? 'border-color: rgba(16, 185, 129, 0.4); color: #10b981; background: rgba(16, 185, 129, 0.1);' : 'color: var(--text-muted);'}" onchange="window.updateEmployeePrinter('${emp.id}', this.value)">
+          <select class="form-select" style="padding: 3px 8px; font-size: 11px; font-weight: 700; width: auto; border-radius: 4px; display: inline-block; margin: 0 auto; ${isWithPrinter ? 'border-color: rgba(16, 185, 129, 0.4); color: #10b981; background: rgba(16, 185, 129, 0.1);' : 'color: var(--text-muted);'}" ${!isAdmin ? 'disabled title="Supervisor: View-only"' : `onchange="window.updateEmployeePrinter('${emp.id}', this.value)"`}>
             <option value="WITH PORTABLE PRINTER" ${isWithPrinter ? 'selected' : ''}>WITH PORTABLE PRINTER</option>
             <option value="N/A" ${!isWithPrinter ? 'selected' : ''}>N/A</option>
           </select>
         </td>
         <td style="text-align: center;">
           <div style="display: flex; gap: 4px; align-items: center; justify-content: center;">
-            <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="window.editEmployee('${emp.id}')" title="Edit Staff Member">
-              ✏️ Edit
-            </button>
-            <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; color: var(--danger); border-color: rgba(239, 68, 68, 0.4);" onclick="window.requestDeleteEmployee('${emp.id}')" title="Delete Record">
-              🗑️ Delete
-            </button>
-            <button class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="window.showQrPass('${emp.id}')" title="View Digital Pass">
-              🪪 Pass
-            </button>
+            ${(() => {
+              if (isAdmin) {
+                if (statusUpper === 'TERMINATED') {
+                  return `
+                    <button class="btn btn-outline-success btn-sm" style="padding: 3px 8px; font-size: 11px; font-weight:700; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid #10b981;" onclick="window.promptReactivateTeller('${emp.id}')" title="Reactivate Teller">
+                      🔄 Reactivate
+                    </button>
+                    <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="window.editEmployee('${emp.id}')" title="Edit Terminated Staff Record">
+                      ✏️ Edit
+                    </button>
+                    <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; color: var(--danger); border-color: rgba(239, 68, 68, 0.4);" onclick="window.requestDeleteEmployee('${emp.id}')" title="Delete Record">
+                      🗑️ Delete
+                    </button>
+                  `;
+                }
+                return `
+                  <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="window.editEmployee('${emp.id}')" title="Edit Staff Member">
+                    ✏️ Edit
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; color: var(--danger); border-color: rgba(239, 68, 68, 0.4);" onclick="window.requestDeleteEmployee('${emp.id}')" title="Delete Record">
+                    🗑️ Delete
+                  </button>
+                  <button class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="window.showQrPass('${emp.id}')" title="View Digital Pass">
+                    🪪 Pass
+                  </button>
+                `;
+              } else {
+                // Supervisor: Master Registry is VIEW-ONLY!
+                return `
+                  <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="window.viewEmployeeDetails('${emp.id}')" title="View Staff Details (Read-Only)">
+                    👁️ Details
+                  </button>
+                  <button class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="window.showQrPass('${emp.id}')" title="View Digital Pass">
+                    🪪 Pass
+                  </button>
+                `;
+              }
+            })()}
           </div>
         </td>
       </tr>
@@ -1179,23 +1313,38 @@ function renderRegistryPagination(totalCount, totalPages) {
 }
 
 window.filterEmployees = function() {
-  const query = document.getElementById('employee-search-input').value.toLowerCase();
+  const input = document.getElementById('employee-search-input');
+  const query = (input ? input.value : '').trim().toLowerCase();
   const store = window.appStore;
   registryCurrentPage = 1;
-  const employees = store.getEmployees();
+
+  if (!query) {
+    // When search is cleared/empty, strictly revert to the default All Staff view
+    // (which excludes Supervisors, Collectors, and Operations Administrator)
+    renderEmployeesTable();
+    return;
+  }
+
+  // Global Master Registry Search: search complete Master Registry dataset
+  // (Supervisors, Collectors, Operations Administrator, Tellers, Relievers, etc.)
+  const employees = store.getEmployees() || [];
   const relievers = store.data.relievers || [];
   const allStaff = [...employees, ...relievers.filter(r => !employees.some(e => e.id === r.id))];
   const filtered = allStaff.filter(e => {
     return (e.name && e.name.toLowerCase().includes(query)) ||
            (e.id && e.id.toLowerCase().includes(query)) ||
            (e.boothCode && e.boothCode.toLowerCase().includes(query)) ||
+           (e.booth && e.booth.toLowerCase().includes(query)) ||
            (e.address && e.address.toLowerCase().includes(query)) ||
            (e.purok && e.purok.toLowerCase().includes(query)) ||
            (e.municipality && e.municipality.toLowerCase().includes(query)) ||
            (e.phone && e.phone.toLowerCase().includes(query)) ||
+           (e.contact && e.contact.toLowerCase().includes(query)) ||
            (e.role && e.role.toLowerCase().includes(query)) ||
            (e.posSerial && e.posSerial.toLowerCase().includes(query)) ||
+           (e.pos && e.pos.toLowerCase().includes(query)) ||
            (e.printerSerial && e.printerSerial.toLowerCase().includes(query)) ||
+           (e.printerName && e.printerName.toLowerCase().includes(query)) ||
            (e.area && e.area.toLowerCase().includes(query));
   });
   renderEmployeesTable(filtered);
@@ -1275,7 +1424,7 @@ window.openAddEmployeeModal = function() {
   const idDisplay = document.getElementById('emp-form-id-display');
   if (idDisplay) idDisplay.value = '';
   document.getElementById('emp-form-name').value = '';
-  document.getElementById('emp-form-role').value = 'SALES REPRESENTATIVE';
+  document.getElementById('emp-form-role').value = 'TELLER';
   document.getElementById('emp-form-dept').value = 'dept-tel';
   document.getElementById('emp-form-purok').value = '';
   document.getElementById('emp-form-muni').value = 'Sto. Tomas';
@@ -1304,7 +1453,7 @@ window.editEmployee = function(id) {
       emp = {
         id: b.assignedTellerId || `BOOTH-${b.id}`,
         name: b.assignedTellerName || b.activeTeller || '',
-        role: 'SALES REPRESENTATIVE',
+        role: 'TELLER',
         department: 'dept-tel',
         purok: b.purok || '',
         municipality: b.municipality || 'Sto. Tomas',
@@ -1333,15 +1482,13 @@ window.editEmployee = function(id) {
   if (idDisplay) idDisplay.value = emp.id;
   document.getElementById('emp-form-name').value = (emp.name && emp.name !== 'N/A' && emp.name !== '-') ? emp.name : (emp.name === 'N/A' ? 'N/A' : '');
   
-  // Standardize Role dropdown selection
-  const rUpper = (emp.role || 'SALES REPRESENTATIVE').toUpperCase();
-  let normalizedRole = 'SALES REPRESENTATIVE';
-  if (rUpper === 'N/A' || rUpper === 'BLANK' || rUpper === '-') normalizedRole = 'N/A';
+  // Standardize Role dropdown selection to the 4 strict roles
+  const rUpper = (emp.role || 'TELLER').toUpperCase();
+  let normalizedRole = 'TELLER';
+  if (rUpper.includes('ADMINISTRATOR') || rUpper.includes('ADMIN') || rUpper.includes('TEAM LEADER')) normalizedRole = 'OPERATIONS ADMINISTRATOR';
   else if (rUpper.includes('SUPERVISOR')) normalizedRole = 'SUPERVISOR';
   else if (rUpper.includes('COLLECTOR')) normalizedRole = 'COLLECTOR';
-  else if (rUpper.includes('RELIEVER') || rUpper.includes('RELIVER')) normalizedRole = 'RELIEVER';
-  else if (rUpper.includes('TEAM LEADER')) normalizedRole = 'TEAM LEADER';
-  else normalizedRole = 'SALES REPRESENTATIVE';
+  else normalizedRole = 'TELLER';
   document.getElementById('emp-form-role').value = normalizedRole;
 
   // Department normalization
@@ -1350,9 +1497,7 @@ window.editEmployee = function(id) {
   if (deptEl) {
     if (dVal === 'dept-col' || dVal.includes('collector')) deptEl.value = 'dept-col';
     else if (dVal === 'dept-sup' || dVal.includes('supervisor')) deptEl.value = 'dept-sup';
-    else if (dVal === 'dept-exec' || dVal.includes('executive')) deptEl.value = 'dept-exec';
-    else if (dVal === 'dept-aud' || dVal.includes('audit')) deptEl.value = 'dept-aud';
-    else if (dVal === 'dept-log' || dVal.includes('logistic')) deptEl.value = 'dept-log';
+    else if (dVal === 'dept-admin' || dVal.includes('admin') || normalizedRole === 'OPERATIONS ADMINISTRATOR') deptEl.value = 'dept-admin';
     else deptEl.value = 'dept-tel';
   }
 
@@ -1428,7 +1573,9 @@ window.editEmployee = function(id) {
   document.getElementById('modal-employee').classList.add('active');
 };
 
+let _isSavingEmployee = false;
 window.saveEmployeeForm = function() {
+  if (_isSavingEmployee) return;
   const origId = document.getElementById('emp-form-id').value;
   const idDisplay = document.getElementById('emp-form-id-display');
   const customId = idDisplay ? idDisplay.value.trim() : '';
@@ -1436,15 +1583,16 @@ window.saveEmployeeForm = function() {
 
   let name = document.getElementById('emp-form-name').value.trim();
   const role = document.getElementById('emp-form-role').value;
+  const dept = document.getElementById('emp-form-dept').value;
   const statusEl = document.getElementById('emp-form-status');
   const selectedStatus = statusEl ? statusEl.value.toUpperCase() : 'ACTIVE';
 
-  // Allow blank/N/A name if status is INACTIVE or role is N/A
   if (!name) {
-    if (selectedStatus === 'INACTIVE' || role === 'N/A') {
+    if (selectedStatus === 'INACTIVE') {
       name = 'N/A';
     } else {
-      alert('Please enter staff name');
+      alert('Validation Error: Staff Full Name is required.');
+      document.getElementById('emp-form-name').focus();
       return;
     }
   }
@@ -1453,10 +1601,15 @@ window.saveEmployeeForm = function() {
   const purok = (inputPurok === '' || inputPurok === '-') ? '-' : inputPurok;
   const inputMuni = document.getElementById('emp-form-muni').value.trim();
   const muni = (inputMuni === '' || inputMuni === '-') ? '-' : inputMuni;
+  if (!muni || muni === '-') {
+    alert('Validation Error: Municipality is required.');
+    document.getElementById('emp-form-muni').focus();
+    return;
+  }
   const fullAddress = purok !== '-' ? (muni !== '-' ? `${purok}, ${muni}` : purok) : muni;
   const boothCode = document.getElementById('emp-form-booth').value.trim() || '-';
   
-  // Contact phone: preserve number if provided, otherwise N/A (never invent)
+  // Contact phone
   const rawPhone = document.getElementById('emp-form-phone').value.trim();
   const phone = (rawPhone && rawPhone !== '0917-000-0000' && rawPhone !== '-') ? rawPhone : 'N/A';
 
@@ -1473,7 +1626,7 @@ window.saveEmployeeForm = function() {
   if (rawLat !== '') {
     const numLat = Number(rawLat);
     if (isNaN(numLat) || numLat < -90 || numLat > 90) {
-      alert('Invalid latitude. Please enter a value between -90 and 90.');
+      alert('Validation Error: Invalid latitude. Please enter a number between -90 and 90.');
       document.getElementById('emp-form-lat').focus();
       return;
     }
@@ -1483,16 +1636,15 @@ window.saveEmployeeForm = function() {
   if (rawLng !== '') {
     const numLng = Number(rawLng);
     if (isNaN(numLng) || numLng < -180 || numLng > 180) {
-      alert('Invalid longitude. Please enter a value between -180 and 180.');
+      alert('Validation Error: Invalid longitude. Please enter a number between -180 and 180.');
       document.getElementById('emp-form-lng').focus();
       return;
     }
     finalLng = numLng;
   }
 
-  // If one is given and the other is blank, prompt user
   if ((finalLat !== null && finalLng === null) || (finalLat === null && finalLng !== null)) {
-    alert('Please enter both Latitude and Longitude, or leave both blank to clear GPS coordinates.');
+    alert('Validation Error: Please enter both Latitude and Longitude, or leave both blank.');
     return;
   }
 
@@ -1500,7 +1652,7 @@ window.saveEmployeeForm = function() {
     id: finalId,
     name: name,
     role: role,
-    department: document.getElementById('emp-form-dept').value,
+    department: dept,
     area: muni !== '-' ? muni : (purok !== '-' ? purok : '-'),
     address: fullAddress,
     purok: purok,
@@ -1519,6 +1671,7 @@ window.saveEmployeeForm = function() {
     etsStatus: (selectedStatus === 'ACTIVE' && finalLat !== null && finalLng !== null) ? 'Active' : 'Offline'
   };
 
+  _isSavingEmployee = true;
   try {
     let savedRecord = null;
     if (origId) {
@@ -1528,12 +1681,14 @@ window.saveEmployeeForm = function() {
       savedRecord = window.appStore.updateEmployee(origId, payload);
       if (!savedRecord) {
         alert(`Failed to update record. Staff member "${origId}" could not be found.`);
+        _isSavingEmployee = false;
         return;
       }
     } else {
       savedRecord = window.appStore.addEmployee(payload);
       if (!savedRecord) {
         alert('Failed to register employee. Please try again.');
+        _isSavingEmployee = false;
         return;
       }
     }
@@ -1541,13 +1696,17 @@ window.saveEmployeeForm = function() {
     if (window.sfx) window.sfx.playChime();
     window.closeModals();
     renderEmployeesTable();
+    if (window.orgChartModule && typeof window.orgChartModule.render === 'function') window.orgChartModule.render();
     if (typeof renderFleetTrackingList === 'function') renderFleetTrackingList();
     if (window.etsMap && typeof window.etsMap.renderAllMarkers === 'function') window.etsMap.renderAllMarkers();
+    if (typeof renderDashboard === 'function') renderDashboard();
 
-    alert(origId ? 'Staff member record updated successfully.' : 'Staff member registered successfully.');
+    alert(origId ? `Staff record for "${name}" (${savedRecord.id || origId}) updated successfully.` : `Staff record for "${name}" registered successfully.`);
   } catch (err) {
     console.error('Error saving employee record:', err);
     alert(`Unable to save record: ${err.message || err}`);
+  } finally {
+    _isSavingEmployee = false;
   }
 };
 
@@ -1779,120 +1938,7 @@ function renderPipelines() {
 
 
 
-// =========================================================================
-// VIEW 6: REST DAY / DAY OFF MANAGEMENT
-// =========================================================================
-function renderRestDays() {
-  const manningTbody = document.getElementById('manning-table-tbody');
-  const rdTbody = document.getElementById('restday-table-tbody');
-  if (!manningTbody || !rdTbody) return;
 
-  const store = window.appStore;
-  const manning = store.getManningCoverage();
-  const restDays = store.getRestDays();
-
-  manningTbody.innerHTML = manning.map(m => `
-    <tr>
-      <td><strong>${m.day}</strong></td>
-      <td style="font-weight: 700; color: #f59e0b;">${m.collectorsOnDuty} Field Collectors</td>
-      <td style="font-weight: 700; color: #10b981;">${m.tellersOnDuty} Booth Tellers</td>
-      <td><span class="badge ${m.status.includes('Full') ? 'badge-success' : 'badge-warning'}">${m.status}</span></td>
-      <td style="font-size: 12px; color: var(--text-muted);">Optimal for scheduled Davao draw shifts</td>
-    </tr>
-  `).join('');
-
-  rdTbody.innerHTML = restDays.map(rd => {
-    const isPending = rd.status.includes('Pending');
-    const isToday = rd.status.includes('Active Today');
-
-    let badgeClass = 'badge-success';
-    if (isPending) badgeClass = 'badge-warning';
-    if (isToday) badgeClass = 'badge-purple';
-
-    return `
-      <tr>
-        <td><code>${rd.id}</code></td>
-        <td><strong>${rd.employeeName}</strong></td>
-        <td><span class="badge badge-info">${rd.role}</span></td>
-        <td><code>${rd.boothCode}</code></td>
-        <td><strong>${rd.fixedRestDay}</strong></td>
-        <td style="font-family: monospace;">${rd.currentWeekDate}</td>
-        <td>${rd.replacementEmployeeName || 'Designated Shift Buffer'}</td>
-        <td style="font-size: 12px;">${rd.reason}</td>
-        <td><span class="badge ${badgeClass}">${rd.status}</span></td>
-        <td>
-          ${isPending ? `
-            <div style="display: flex; gap: 4px;">
-              <button class="btn btn-success btn-sm" onclick="window.approveRestDay('${rd.id}')">
-                Approve
-              </button>
-              <button class="btn btn-danger btn-sm" onclick="window.rejectRestDay('${rd.id}')">
-                Decline
-              </button>
-            </div>
-          ` : `
-            <span style="font-size: 11px; color: var(--text-dim);">Signed: ${rd.approvedBy}</span>
-          `}
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-window.openRestDayModal = function() {
-  sfx.playClick();
-  const empSelect = document.getElementById('rd-form-emp');
-  const relieverSelect = document.getElementById('rd-form-reliever');
-  const emps = window.appStore.getEmployees();
-
-  empSelect.innerHTML = emps.map(e => `<option value="${e.id}">${e.name} (${e.role} - ${e.boothCode})</option>`).join('');
-  relieverSelect.innerHTML = emps.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
-
-  document.getElementById('rd-form-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('rd-form-reason').value = '';
-  document.getElementById('modal-restday').classList.add('active');
-};
-
-window.saveRestDayForm = function() {
-  const store = window.appStore;
-  const empId = document.getElementById('rd-form-emp').value;
-  const relieverId = document.getElementById('rd-form-reliever').value;
-  const reason = document.getElementById('rd-form-reason').value.trim();
-
-  const emp = store.getEmployees().find(e => e.id === empId);
-  const reliever = store.getEmployees().find(e => e.id === relieverId);
-
-  if (!reason) {
-    alert('Please specify the reason for this rest day or swap request');
-    return;
-  }
-
-  store.addRestDayRequest({
-    employeeId: empId,
-    employeeName: emp ? emp.name : 'Staff Member',
-    role: emp ? emp.role : 'Teller',
-    boothCode: emp ? emp.boothCode : 'BTH-DVO-101',
-    fixedRestDay: 'Flexible Day Off',
-    currentWeekDate: document.getElementById('rd-form-date').value,
-    replacementEmployeeId: relieverId,
-    replacementEmployeeName: reliever ? reliever.name : 'Buffer Staff',
-    reason: reason,
-    status: 'Pending Supervisor Approval'
-  });
-
-  sfx.playChime();
-  window.closeModals();
-};
-
-window.approveRestDay = function(id) {
-  sfx.playChime();
-  window.appStore.updateRestDayStatus(id, 'Approved', 'Rodrigo S. Morales (Supervisor)');
-};
-
-window.rejectRestDay = function(id) {
-  sfx.playClick();
-  window.appStore.updateRestDayStatus(id, 'Declined (Coverage Tight)', 'Rodrigo S. Morales (Supervisor)');
-};
 
 // =========================================================================
 // VIEW 7: INVENTORY & COMPANY PROPERTY MANAGEMENT
@@ -2561,580 +2607,14 @@ function renderOrganization() {
 }
 
 // =========================================================================
-// VIEW 9: REPORTS & ANALYTICS (EOD DAILY REPORT)
-// =========================================================================
-function renderEodReport() {
-  const tbody = document.getElementById('eod-table-tbody');
-  if (!tbody) return;
-
-  const store = window.appStore;
-  const ledger = store.getEodLedger();
-
-  let totalGross = 0;
-  let totalPayouts = 0;
-  let totalExpenses = 0;
-  let totalNet = 0;
-
-  tbody.innerHTML = ledger.map(entry => {
-    totalGross += Number(entry.grossSales) || 0;
-    totalPayouts += Number(entry.payoutsClaims) || 0;
-    totalExpenses += Number(entry.expenses) || 0;
-    totalNet += Number(entry.netRemittance) || 0;
-
-    const isOver = entry.variance > 0;
-    const isShort = entry.variance < 0;
-    let badgeClass = 'badge-success';
-    if (isOver) badgeClass = 'badge-info';
-    if (isShort) badgeClass = 'badge-danger';
-
-    return `
-      <tr>
-        <td><strong>${entry.boothCode}</strong></td>
-        <td>${entry.teller}</td>
-        <td><code>${entry.posSerial}</code></td>
-        <td style="font-weight: 600;">${formatPHP(entry.grossSales)}</td>
-        <td style="color: #ef4444;">${formatPHP(entry.payoutsClaims)}</td>
-        <td style="color: #f59e0b;">${formatPHP(entry.expenses)}</td>
-        <td style="font-weight: 700; color: #10b981;">${formatPHP(entry.expectedCash)}</td>
-        <td>
-          <input type="number" value="${entry.actualCash}" style="width: 110px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-input); color: var(--text-main); font-family: monospace; font-weight: 600;" onchange="window.updateEodCash('${entry.boothCode}', this.value)">
-        </td>
-        <td style="font-weight: 700; ${isOver ? 'color: #0284c7;' : (isShort ? 'color: #dc2626;' : 'color: #16a34a;')}">${isOver ? '+' : ''}${formatPHP(entry.variance)}</td>
-        <td><span class="badge ${badgeClass}">${entry.status}</span></td>
-      </tr>
-    `;
-  }).join('');
-
-  document.getElementById('eod-summary-gross').textContent = formatPHP(totalGross);
-  document.getElementById('eod-summary-payouts').textContent = formatPHP(totalPayouts);
-  document.getElementById('eod-summary-expenses').textContent = formatPHP(totalExpenses);
-  document.getElementById('eod-summary-net').textContent = formatPHP(totalNet);
-}
-
-window.updateEodCash = function(boothCode, val) {
-  sfx.playClick();
-  window.appStore.updateEodEntry(boothCode, { actualCash: parseFloat(val) || 0 });
-  renderEodReport();
-};
-
-window.printEodReport = function() {
-  sfx.playClick();
-  window.print();
-};
-
-window.exportEodToExcel = async function() {
-  sfx.playChime();
-  if (typeof ExcelJS === 'undefined') {
-    alert('ExcelJS library is loading, please try again in a moment.');
-    return;
-  }
-
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'APEX OmniERP Enterprise';
-  workbook.created = new Date();
-
-  const sheet = workbook.addWorksheet('EOD Balancing Sheet', {
-    pageSetup: { paperSize: 9, orientation: 'landscape' }
-  });
-
-  // Headers
-  sheet.mergeCells('A1:J1');
-  const titleCell = sheet.getCell('A1');
-  titleCell.value = 'APEX MINDANAO OPERATIONS & GAMING SERVICES CORP. - DAVAO SECTOR';
-  titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-  titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-  sheet.getRow(1).height = 30;
-
-  sheet.mergeCells('A2:J2');
-  const subtitleCell = sheet.getCell('A2');
-  subtitleCell.value = `Official End of the Day (EOD) Operations Report - Date: ${new Date().toISOString().split('T')[0]}`;
-  subtitleCell.font = { name: 'Arial', size: 11, italic: true };
-  subtitleCell.alignment = { horizontal: 'center' };
-
-  sheet.addRow([]);
-
-  // Table Column Headers
-  const headerRow = sheet.addRow([
-    'Booth Code',
-    'Assigned Teller',
-    'POS Serial No.',
-    'Gross Sales (₱)',
-    'Payouts/Claims (₱)',
-    'Expenses (₱)',
-    'Expected Remittance (₱)',
-    'Actual Cash Remitted (₱)',
-    'Variance (Over/Short)',
-    'Status'
-  ]);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  headerRow.eachCell(cell => {
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
-    cell.alignment = { vertical: 'middle', horizontal: 'center' };
-  });
-
-  const ledger = window.appStore.getEodLedger();
-  ledger.forEach(row => {
-    sheet.addRow([
-      row.boothCode,
-      row.teller,
-      row.posSerial,
-      row.grossSales,
-      row.payoutsClaims,
-      row.expenses,
-      row.expectedCash,
-      row.actualCash,
-      row.variance,
-      row.status
-    ]);
-  });
-
-  // Auto column widths
-  sheet.columns.forEach(col => {
-    col.width = 18;
-  });
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `APEX-Davao-EOD-Report-${new Date().toISOString().split('T')[0]}.xlsx`;
-  a.click();
-  window.URL.revokeObjectURL(url);
-};
-
-// =========================================================================
-// VIEW 10: STEP 2 REPORT DETAILS & OCR RECOGNITION STUDIO
+// THERMAL PAPER & GENERAL BACKUP UTILITIES
 // =========================================================================
 
-// Step 2 Report Details State Structure (matching Image 2)
-let step2ReportData = {
-  date: 'September 06, 2024',
-  commission: 74776.50,
-  salary: 28200.00,
-  expenses: [
-    { amount: 1200.00, desc: 'FUEL MOTOR', name: '', booth: '', loc: 'Davao Del Norte', dateCover: '', note: 'Motorcycle Gas Allowance' },
-    { amount: 400.00, desc: 'RENT MOTOR', name: '', booth: '', loc: 'Field Route', dateCover: '', note: 'Motor Rental' },
-    { amount: 20.00, desc: 'WIFI DDN 1477', name: 'MELANIE SARAWI', booth: 'DDN-1477', loc: 'TAGUM', dateCover: '', note: 'Wifi Allowance' },
-    { amount: 30.00, desc: 'WIFI DDN 1782', name: 'MARYJANE FERNANDEZ', booth: 'DDN-1782', loc: 'CARMEN', dateCover: '', note: 'Wifi Allowance' },
-    { amount: 834.00, desc: 'DOOR BOLT 10PCS, DOOR HASH 5PCS, PADLOCK 5PCS', name: '', booth: 'DDN BOOTHS', loc: '', dateCover: '', note: 'FOR BOOTH' },
-    { amount: 4600.00, desc: 'THERMAL PAPER 300 ROLLS', name: '', booth: 'CENTRAL BUFFER', loc: 'Warehouse', dateCover: '', note: 'Consumables' },
-    { amount: 15.00, desc: 'WIFI DDN 1475', name: 'LUZVIMINDA GALASATAN', booth: 'DDN-1475', loc: 'PANABO', dateCover: '', note: 'Wifi Allowance' },
-    { amount: 20.00, desc: 'WIFI DDN 768', name: 'ALMERA DIGAMON', booth: 'DDN-768', loc: 'PANABO', dateCover: '', note: 'Wifi Allowance' },
-    { amount: 1800.00, desc: 'RENT FEE SABONGAN NI NENE TIBAL-OG ST. TOMAS', name: 'Davilyn Gelito', booth: 'DDN-762', loc: 'Sto. Tomas', dateCover: 'AUG. 7, 2024 - SEP. 7, 2024', note: 'Monthly Stall Rent' },
-    { amount: 330.00, desc: 'POS LOAD /MONTH', name: 'Nobelyn Baya', booth: 'DDN-428', loc: 'Carmen', dateCover: 'Sep 2024', note: 'Data Plan' },
-    { amount: 330.00, desc: 'POS LOAD /MONTH', name: 'Mary Lovelyn Ramos', booth: 'DDN-350', loc: 'Tagum', dateCover: 'Sep 2024', note: 'Data Plan' },
-    { amount: 330.00, desc: 'POS LOAD /MONTH', name: 'Marnie Royo', booth: 'DDN-427', loc: 'Carmen', dateCover: 'Sep 2024', note: 'Data Plan' },
-    { amount: 330.00, desc: 'POS LOAD /MONTH', name: 'Amerita Hipos', booth: 'DDN-422', loc: 'Tagum', dateCover: 'Sep 2024', note: 'Data Plan' },
-    { amount: 330.00, desc: 'POS LOAD /MONTH', name: 'Beverly Alao', booth: 'DDN-351', loc: 'Tagum', dateCover: 'Sep 2024', note: 'Data Plan' },
-    { amount: 330.00, desc: 'POS LOAD /MONTH', name: 'Lenie Orillo', booth: 'DDN-1591', loc: 'Tagum', dateCover: 'Sep 2024', note: 'Data Plan (1781)' },
-    { amount: 5000.00, desc: 'C.A. COLL. JASON', name: 'JASON (DDN005-SC003)', booth: 'HQ-DDN', loc: 'Carmen / Tagum', dateCover: '', note: 'APPROVED BY: SIR JUNDY' }
-  ],
-  collectorPayments: [
-    { amount: 200.00, desc: 'PAYMENT COLL. MARK ANTHONY', booth: 'HQ-DDN-PANABO', collector: 'MARK ANTHONY (MAC2) - DDN005-SC004', tellerReliever: 'Panabo Hub Remittance', note: 'Collector Field Payment' }
-  ],
-  others: [
-    { amount: 29878.25, desc: 'COMM. SEP. 05, 2024 (Prior day commission carried over into deposit)' }
-  ]
-};
+// Step 2 & OCR Studio functions removed.
 
-function initOcrStudio() {
-  window.loadStep2SampleFromYellowPad();
-}
+// Legacy OCR recognition studio functions removed.
 
-window.loadStep2SampleFromYellowPad = function() {
-  sfx.playClick();
-  currentSampleCanvas = window.ocrEngine.generateYellowPadSampleCanvas();
-  window.applyOcrFilters();
-  renderStep2Report();
-  calculateStep2Totals();
-};
-
-window.handleOcrFileUpload = function(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(event) {
-    const img = new Image();
-    img.onload = function() {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      currentSampleCanvas = canvas;
-      window.applyOcrFilters();
-    };
-    img.src = event.target.result;
-  };
-  reader.readAsDataURL(file);
-};
-
-window.applyOcrFilters = function() {
-  if (!currentSampleCanvas) return;
-
-  const contrast = parseFloat(document.getElementById('ocr-slider-contrast').value);
-  const threshold = parseInt(document.getElementById('ocr-slider-threshold').value);
-  const invert = document.getElementById('ocr-check-invert').checked;
-
-  const processed = window.ocrEngine.preprocessImage(currentSampleCanvas, {
-    contrast: contrast,
-    threshold: threshold,
-    invert: invert
-  });
-
-  const previewCanvas = document.getElementById('ocr-canvas');
-  previewCanvas.width = processed.width;
-  previewCanvas.height = processed.height;
-  const ctx = previewCanvas.getContext('2d');
-  ctx.drawImage(processed, 0, 0);
-};
-
-window.executeOcrRecognition = async function() {
-  sfx.playClick();
-  const previewCanvas = document.getElementById('ocr-canvas');
-  if (!previewCanvas) return;
-
-  const btn = document.getElementById('ocr-run-btn');
-  const progressContainer = document.getElementById('ocr-progress-container');
-  const progressBar = document.getElementById('ocr-progress-bar');
-  const progressPercent = document.getElementById('ocr-progress-percent');
-
-  btn.disabled = true;
-  btn.textContent = '⏳ Processing OCR...';
-  progressContainer.style.display = 'block';
-
-  try {
-    const result = await window.ocrEngine.recognize(previewCanvas, (pct) => {
-      progressBar.style.width = `${pct}%`;
-      progressPercent.textContent = `${pct}%`;
-    });
-
-    sfx.playChime();
-    document.getElementById('ocr-raw-text').value = result.rawText;
-
-    if (result.reportData) {
-      step2ReportData = result.reportData;
-      document.getElementById('step2-date').value = step2ReportData.date;
-      document.getElementById('step2-commission').value = step2ReportData.commission;
-      document.getElementById('step2-salary').value = step2ReportData.salary;
-      renderStep2Report();
-      calculateStep2Totals();
-      alert('✅ Smart Field Extraction Complete! Form populated following Step 2 Report Details template.');
-    }
-  } catch (err) {
-    console.error('OCR Error:', err);
-    alert('OCR recognition encountered an error: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '⚡ Run OCR Recognition';
-    setTimeout(() => {
-      progressContainer.style.display = 'none';
-      progressBar.style.width = '0%';
-    }, 1500);
-  }
-};
-
-// Render Step 2 Report Tables
-function renderStep2Report() {
-  const expTbody = document.getElementById('step2-expenses-tbody');
-  const payTbody = document.getElementById('step2-payments-tbody');
-  const othTbody = document.getElementById('step2-others-tbody');
-
-  if (!expTbody || !payTbody || !othTbody) return;
-
-  // 1. Expenses Rows
-  expTbody.innerHTML = step2ReportData.expenses.map((row, idx) => `
-    <tr>
-      <td>
-        <input type="number" step="0.01" class="step2-table-input" value="${row.amount}" onchange="window.updateStep2Expense(${idx}, 'amount', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.desc || ''}" onchange="window.updateStep2Expense(${idx}, 'desc', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.name || ''}" placeholder="Teller / Payee" onchange="window.updateStep2Expense(${idx}, 'name', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.booth || ''}" placeholder="DDN-xxx" onchange="window.updateStep2Expense(${idx}, 'booth', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.loc || ''}" placeholder="Municipality" onchange="window.updateStep2Expense(${idx}, 'loc', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.dateCover || ''}" placeholder="e.g. Aug 7 - Sep 7" onchange="window.updateStep2Expense(${idx}, 'dateCover', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.note || ''}" placeholder="Notes" onchange="window.updateStep2Expense(${idx}, 'note', this.value)">
-      </td>
-      <td style="text-align: center;">
-        <button type="button" style="background: none; border: none; cursor: pointer; color: #dc2626;" onclick="window.deleteStep2ExpenseRow(${idx})">✕</button>
-      </td>
-    </tr>
-  `).join('');
-
-  // 2. Collector Payments Rows
-  payTbody.innerHTML = step2ReportData.collectorPayments.map((row, idx) => `
-    <tr>
-      <td>
-        <input type="number" step="0.01" class="step2-table-input" value="${row.amount}" onchange="window.updateStep2Payment(${idx}, 'amount', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.desc || ''}" onchange="window.updateStep2Payment(${idx}, 'desc', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.booth || ''}" placeholder="Station / HQ" onchange="window.updateStep2Payment(${idx}, 'booth', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.collector || ''}" placeholder="Collector Name" onchange="window.updateStep2Payment(${idx}, 'collector', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.tellerReliever || ''}" placeholder="Teller / Remitter" onchange="window.updateStep2Payment(${idx}, 'tellerReliever', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.note || ''}" placeholder="Notes" onchange="window.updateStep2Payment(${idx}, 'note', this.value)">
-      </td>
-      <td style="text-align: center;">
-        <button type="button" style="background: none; border: none; cursor: pointer; color: #dc2626;" onclick="window.deleteStep2PaymentRow(${idx})">✕</button>
-      </td>
-    </tr>
-  `).join('');
-
-  // 3. Others Rows
-  othTbody.innerHTML = step2ReportData.others.map((row, idx) => `
-    <tr>
-      <td>
-        <input type="number" step="0.01" class="step2-table-input" value="${row.amount}" onchange="window.updateStep2Other(${idx}, 'amount', this.value)">
-      </td>
-      <td>
-        <input type="text" class="step2-table-input" value="${row.desc || ''}" onchange="window.updateStep2Other(${idx}, 'desc', this.value)">
-      </td>
-      <td style="text-align: center;">
-        <button type="button" style="background: none; border: none; cursor: pointer; color: #dc2626;" onclick="window.deleteStep2OtherRow(${idx})">✕</button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-// Interactive Updates and Live Math Engine (Matching Image 2)
-window.updateStep2Expense = function(idx, field, val) {
-  if (field === 'amount') val = parseFloat(val) || 0;
-  step2ReportData.expenses[idx][field] = val;
-  calculateStep2Totals();
-};
-
-window.updateStep2Payment = function(idx, field, val) {
-  if (field === 'amount') val = parseFloat(val) || 0;
-  step2ReportData.collectorPayments[idx][field] = val;
-  calculateStep2Totals();
-};
-
-window.updateStep2Other = function(idx, field, val) {
-  if (field === 'amount') val = parseFloat(val) || 0;
-  step2ReportData.others[idx][field] = val;
-  calculateStep2Totals();
-};
-
-window.addStep2ExpenseRow = function() {
-  sfx.playClick();
-  step2ReportData.expenses.push({ amount: 0, desc: '', name: '', booth: '', loc: '', dateCover: '', note: '' });
-  renderStep2Report();
-  calculateStep2Totals();
-};
-
-window.deleteStep2ExpenseRow = function(idx) {
-  sfx.playClick();
-  step2ReportData.expenses.splice(idx, 1);
-  renderStep2Report();
-  calculateStep2Totals();
-};
-
-window.addStep2PaymentRow = function() {
-  sfx.playClick();
-  step2ReportData.collectorPayments.push({ amount: 0, desc: '', booth: '', collector: '', tellerReliever: '', note: '' });
-  renderStep2Report();
-  calculateStep2Totals();
-};
-
-window.deleteStep2PaymentRow = function(idx) {
-  sfx.playClick();
-  step2ReportData.collectorPayments.splice(idx, 1);
-  renderStep2Report();
-  calculateStep2Totals();
-};
-
-window.addStep2OtherRow = function() {
-  sfx.playClick();
-  step2ReportData.others.push({ amount: 0, desc: '' });
-  renderStep2Report();
-  calculateStep2Totals();
-};
-
-window.deleteStep2OtherRow = function(idx) {
-  sfx.playClick();
-  step2ReportData.others.splice(idx, 1);
-  renderStep2Report();
-  calculateStep2Totals();
-};
-
-// Summary Formula Engine:
-// Sub-total = commission less (expenses + salary)
-// Grand total for deposit = sub-total plus payments plus others
-window.calculateStep2Totals = function() {
-  const comm = parseFloat(document.getElementById('step2-commission').value) || 0;
-  const sal = parseFloat(document.getElementById('step2-salary').value) || 0;
-
-  const totalExp = step2ReportData.expenses.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-  const totalPay = step2ReportData.collectorPayments.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-  const totalOth = step2ReportData.others.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-
-  const expPlusSal = totalExp + sal;
-  const subTotal = comm - expPlusSal;
-  const grandTotal = subTotal + totalPay + totalOth;
-
-  function fmt(n) {
-    return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  document.getElementById('calc-total-expenses').textContent = fmt(totalExp);
-  document.getElementById('calc-salary').textContent = fmt(sal);
-  document.getElementById('calc-exp-salary').textContent = fmt(expPlusSal);
-  document.getElementById('calc-commission').textContent = fmt(comm);
-  document.getElementById('calc-subtotal').textContent = fmt(subTotal);
-  document.getElementById('calc-total-payments').textContent = fmt(totalPay);
-  document.getElementById('calc-total-others').textContent = fmt(totalOth);
-  document.getElementById('calc-grandtotal').textContent = fmt(grandTotal);
-};
-
-// Commit Step 2 Report to ERP System Ledger & EOD
-window.commitStep2ToSystem = function() {
-  const comm = parseFloat(document.getElementById('step2-commission').value) || 0;
-  const sal = parseFloat(document.getElementById('step2-salary').value) || 0;
-  const dateStr = document.getElementById('step2-date').value || '2024-09-06';
-
-  const store = window.appStore;
-
-  // Add Commission as Verified Income
-  store.addTransaction({
-    date: dateStr,
-    time: '12:00',
-    type: 'Income',
-    category: 'Daily Collection',
-    boothCode: 'DDN-ALL',
-    description: `Gross Daily Commission (${dateStr})`,
-    amount: comm,
-    employeeId: 'DDN005-SC001',
-    status: 'Verified',
-    voucherRef: `COMM-${dateStr.replace(/[^0-9]/g, '').slice(-4)}`
-  });
-
-  // Add Salary as Approved Expense
-  store.addTransaction({
-    date: dateStr,
-    time: '12:15',
-    type: 'Expense',
-    category: 'Salary & Payroll',
-    boothCode: 'DDN-ALL',
-    description: `Daily Salary Payroll (${dateStr})`,
-    amount: sal,
-    employeeId: 'DDN005-SUP01',
-    status: 'Approved',
-    voucherRef: `SAL-${dateStr.replace(/[^0-9]/g, '').slice(-4)}`
-  });
-
-  // Add all individual expenses to Ledger
-  step2ReportData.expenses.forEach(exp => {
-    if (exp.amount > 0) {
-      store.addTransaction({
-        date: dateStr,
-        time: '12:30',
-        type: 'Expense',
-        category: exp.desc.includes('FUEL') ? 'Transportation & Fuel' : (exp.desc.includes('WIFI') ? 'Booth Rental & Utility' : (exp.desc.includes('THERMAL') ? 'Thermal Paper Supply' : 'General Expense')),
-        boothCode: exp.booth || 'HQ-DDN',
-        description: `${exp.desc} ${exp.name ? '- ' + exp.name : ''} ${exp.note ? '(' + exp.note + ')' : ''}`,
-        amount: exp.amount,
-        employeeId: exp.booth ? `TELLER-${exp.booth}` : 'DDN005-SC001',
-        status: 'Approved',
-        voucherRef: `EXP-${Math.floor(1000 + Math.random() * 9000)}`
-      });
-    }
-  });
-
-  sfx.playChime();
-  alert(`✅ Report successfully synchronized! Income, Salary, and all ${step2ReportData.expenses.length} expenses committed to the Financial Ledger and EOD Audit Sheet.`);
-  window.switchView('view-reports');
-};
-
-// Export Step 2 Report to Excel matching Template Format
-window.exportStep2ToExcel = async function() {
-  sfx.playChime();
-  if (typeof ExcelJS === 'undefined') {
-    alert('ExcelJS is loading, please try again in a moment');
-    return;
-  }
-
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Step 2 - Report Details');
-
-  // Title Plate
-  sheet.mergeCells('A1:G1');
-  sheet.getCell('A1').value = 'STEP 2 – REPORT DETAILS (DAVAO DEL NORTE OPERATIONS)';
-  sheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
-  sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF234160' } };
-  sheet.getCell('A1').alignment = { horizontal: 'center' };
-
-  sheet.addRow([]);
-  sheet.addRow(['DATE', document.getElementById('step2-date').value, '', 'COMMISSION', parseFloat(document.getElementById('step2-commission').value) || 0, 'SALARY', parseFloat(document.getElementById('step2-salary').value) || 0]);
-
-  sheet.addRow([]);
-  const expHead = sheet.addRow(['AMOUNT', 'DESCRIPTION', 'NAME', 'BOOTH CODE', 'LOCATION', 'DATE PERIOD COVER', 'NOTE']);
-  expHead.font = { bold: true };
-  expHead.eachCell(c => c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAE2C4' } });
-
-  step2ReportData.expenses.forEach(r => {
-    sheet.addRow([r.amount, r.desc, r.name, r.booth, r.loc, r.dateCover, r.note]);
-  });
-
-  sheet.addRow([]);
-  const payHead = sheet.addRow(['COLLECTOR PAYMENTS']);
-  payHead.font = { bold: true };
-  sheet.addRow(['AMOUNT', 'DESCRIPTION', 'BOOTH CODE', 'COLLECTOR', 'TELLER / RELIEVER', 'NOTE']);
-  step2ReportData.collectorPayments.forEach(r => {
-    sheet.addRow([r.amount, r.desc, r.booth, r.collector, r.tellerReliever, r.note]);
-  });
-
-  sheet.addRow([]);
-  const othHead = sheet.addRow(['OTHERS']);
-  othHead.font = { bold: true };
-  sheet.addRow(['AMOUNT', 'DESCRIPTION']);
-  step2ReportData.others.forEach(r => {
-    sheet.addRow([r.amount, r.desc]);
-  });
-
-  sheet.addRow([]);
-  sheet.addRow(['SUMMARY TOTALS']);
-  sheet.addRow(['Total Expenses', document.getElementById('calc-total-expenses').textContent]);
-  sheet.addRow(['+ Salary', document.getElementById('calc-salary').textContent]);
-  sheet.addRow(['= Expenses + Salary', document.getElementById('calc-exp-salary').textContent]);
-  sheet.addRow(['Commission', document.getElementById('calc-commission').textContent]);
-  sheet.addRow(['Sub-total', document.getElementById('calc-subtotal').textContent]);
-  sheet.addRow(['Total Collector Payments', document.getElementById('calc-total-payments').textContent]);
-  sheet.addRow(['Total Others', document.getElementById('calc-total-others').textContent]);
-  sheet.addRow(['Grand Total for Deposit', document.getElementById('calc-grandtotal').textContent]);
-
-  sheet.columns.forEach(c => c.width = 20);
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Step2-Report-Details-${document.getElementById('step2-date').value.replace(/[^a-zA-Z0-9]/g, '-')}.xlsx`;
-  a.click();
-  window.URL.revokeObjectURL(url);
-};
+// Step 2 & OCR Studio functions removed in favor of Thermal Paper Daily Summary module.
 
 // Database Backup & Restore
 window.backupDatabaseJson = function() {
